@@ -3,12 +3,13 @@ const $=id=>document.getElementById(id);
 const make=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el};
 const format=(date,options={month:'short',day:'numeric'})=>new Intl.DateTimeFormat('en-CA',{...options,timeZone:'UTC'}).format(new Date(date+'T00:00:00Z'));
 let cells=cellDays(sampleRows()), sample=true, year=2026, month=7, selected=null, interval=null;
+let replayTimer=null;
 const sensor=()=>$('sensor').value;
 const monthLength=()=>new Date(Date.UTC(year,month,0)).getUTCDate();
 const monthBounds=()=>[dayAt(year,month,1),dayAt(year,month,monthLength())];
 const currentBounds=()=>interval??(selected?[selected,selected]:monthBounds());
 const period=(start,end)=>start===end?format(start):format(start)+' – '+format(end);
-function showChart(items,title,note,analysis=false){
+function showChart(items,title,note,analysis=false,unit='observed hotspot cell-days'){
   $('chart-title').textContent=title;
   $('chart-note').textContent=note;
   $('reset-chart').hidden=!analysis;
@@ -19,7 +20,7 @@ function showChart(items,title,note,analysis=false){
     const col=make('div','bar-col');const track=make('div','bar-track');const bar=make('div','bar');
     bar.style.height=(item.value/max*100)+'%';
     const label=item.full??item.label;
-    col.title=label+': '+item.value+' observed hotspot cell-days';col.setAttribute('aria-label',col.title);
+    col.title=label+': '+item.value+' '+unit;col.setAttribute('aria-label',col.title);
     track.append(bar);col.append(track,make('span','',item.label));return col;
   }));
 }
@@ -32,14 +33,14 @@ function mapCells(c){
     if(!byLocation.has(key))byLocation.set(key,[]);
     byLocation.get(key).push(point);
   }
-  const maxDays=Math.max(1,...[...byLocation.values()].map(points=>points.length));
+  $('scale-note').textContent=c.length?byLocation.size.toLocaleString()+' mapped cells':'No matching records';
   $('markers').replaceChildren(...[...byLocation.values()].map(points=>{
     const p=points[0];
     const pin=make('button','hot');
     pin.style.left=((p.lon-bounds.west)/(bounds.east-bounds.west)*100)+'%';
     pin.style.top=((bounds.north-p.lat)/(bounds.north-bounds.south)*100)+'%';
     const records=points.flatMap(x=>x.records).filter(r=>sensor()==='Combined'||r.sensor===sensor());
-    pin.style.setProperty('--column-height',(8+48*points.length/maxDays)+'px');
+    pin.style.setProperty('--column-height',(Math.min(64,6+points.length*7))+'px');
     pin.title=p.lat.toFixed(2)+', '+p.lon.toFixed(2)+' · '+points.length+' cell-days';
     pin.setAttribute('aria-label',pin.title);
     pin.addEventListener('click',()=>{
@@ -58,6 +59,9 @@ function render(){
   $('both').textContent=filtered.filter(c=>c.sensors.size===2).length.toLocaleString();
   const peak=[...filtered.reduce((days,c)=>days.set(c.date,(days.get(c.date)||0)+1),new Map())].sort((a,b)=>b[1]-a[1])[0];
   $('peak').textContent=peak?format(peak[0]):'—';
+  $('replay-day').max=monthLength();
+  $('replay-day').value=(selected??interval?.[0]??first).slice(-2);
+  $('replay-label').textContent=selected?format(selected):interval?period(...interval):'Whole month';
   $('month').textContent=format(first,{month:'long',year:'numeric'});
   $('data-note').textContent=sample?'Demo data · Simulated hotspots, not live NASA observations. Import FIRMS CSVs to analyze actual observations.':'Imported FIRMS CSVs · Observations only. Dates without records have unknown coverage.';
   const max=Math.max(1,...counts.values());
@@ -69,7 +73,7 @@ function render(){
     if(value)button.style.setProperty('--tone',['#68402f','#89462e','#a95330','#c45934'][Math.min(3,Math.floor(value/max*4))]);
     button.title=format(date)+': '+(value?value+' observed hotspot cells':'No records')
     button.setAttribute('aria-label',button.title);
-    button.addEventListener('click',()=>{selected=date;interval=null;render()});
+    button.addEventListener('click',()=>{stopReplay();selectDay(Number(date.slice(-2)))});
     buttons.push(button);chart.push({label:i===1||i%5===0?i:'',full:format(date),value});
   }
   $('days').replaceChildren(...buttons);
@@ -78,7 +82,20 @@ function render(){
   $('analysis-result').textContent='Choose an analysis to update the chart. Model-powered questions will be available after SI is connected.';
 }
 function analyze(operation){
+  stopReplay();
   const [start,end]=currentBounds();
+  if(operation==='persistence'){
+    const locations=new Map();
+    for(const cell of filterCells(cells,start,end,sensor())){
+      const key=cell.x+':'+cell.y;
+      locations.set(key,(locations.get(key)??0)+1);
+    }
+    const buckets=[0,0,0];
+    for(const days of locations.values()) buckets[Math.min(days,3)-1]++;
+    showChart(['1 day','2 days','3+ days'].map((label,index)=>({label,value:buckets[index]})),'Repeat hotspot observations',period(start,end)+' · unique grid cells',true,'grid cells');
+    $('analysis-result').textContent=locations.size?(buckets[1]+buckets[2])+' of '+locations.size+' mapped cells had observations on multiple local days. Repeat detections alone cannot establish whether the same fire persisted.':'No records in this selection.';
+    return;
+  }
   if(operation==='week'){
     const peak=peakWeek(cells,year,month,sensor());
     if(!peak.value){$('analysis-result').textContent='No observations in this month for the selected instrument.';return}
@@ -107,21 +124,93 @@ function analyze(operation){
 
 }
 for(const b of document.querySelectorAll('[data-analysis]'))b.addEventListener('click',()=>analyze(b.dataset.analysis));
-$('tilt').onclick=()=>{
-  const active=$('map').classList.toggle('tilted');
-  $('tilt').setAttribute('aria-pressed',active);
-  $('tilt').textContent=active?'2D view':'3D view';
-  $('map-scale').textContent=active?'Column height = observed days per cell':'Northwestern Ontario';
-};
-function changeMonth(delta){const d=new Date(Date.UTC(year,month-1+delta,1));year=d.getUTCFullYear();month=d.getUTCMonth()+1;selected=null;interval=null;render()}
+const map=$('map');
+const camera={pitch:44,bearing:-8,zoom:1,orbit:true};
+const clamp=(value,min,max)=>Math.min(max,Math.max(min,value));
+function updateCamera(){
+  map.classList.toggle('tilted',camera.orbit);
+  map.style.setProperty('--pitch',camera.pitch+'deg');
+  map.style.setProperty('--bearing',camera.bearing+'deg');
+  map.style.setProperty('--zoom',camera.zoom);
+  $('tilt').setAttribute('aria-pressed',camera.orbit);
+  $('tilt').textContent=camera.orbit?'Orbit':'Top down';
+  $('camera-hint').textContent=camera.orbit?'Drag to orbit · Select a hotspot for evidence':'Top-down view · Select a hotspot for evidence';
+}
+$('tilt').onclick=()=>{camera.orbit=!camera.orbit;updateCamera()};
+for(const control of document.querySelectorAll('[data-camera]')){
+  control.onclick=()=>{
+    const action=control.dataset.camera;
+    if(action==='reset')Object.assign(camera,{pitch:44,bearing:-8,zoom:1});
+    if(action==='zoom-in')camera.zoom=clamp(camera.zoom+.15,.65,1.75);
+    if(action==='zoom-out')camera.zoom=clamp(camera.zoom-.15,.65,1.75);
+    if(action==='left'||action==='right'){
+      camera.orbit=true;
+      camera.bearing+=action==='left'?-15:15;
+    }
+    updateCamera();
+  };
+}
+let drag=null;
+map.addEventListener('pointerdown',event=>{
+  if(!camera.orbit||event.button!==0||event.target.closest('button'))return;
+  drag={id:event.pointerId,x:event.clientX,y:event.clientY,pitch:camera.pitch,bearing:camera.bearing};
+  map.setPointerCapture(event.pointerId);
+  map.classList.add('dragging');
+});
+map.addEventListener('pointermove',event=>{
+  if(!drag||event.pointerId!==drag.id)return;
+  camera.bearing=drag.bearing+(event.clientX-drag.x)*.28;
+  camera.pitch=clamp(drag.pitch+(event.clientY-drag.y)*.24,18,66);
+  updateCamera();
+});
+for(const type of ['pointerup','pointercancel','lostpointercapture']){
+  map.addEventListener(type,()=>{drag=null;map.classList.remove('dragging')});
+}
+function setExpanded(state){
+  $('map-card').classList.toggle('expanded',state);
+  $('expand').setAttribute('aria-pressed',state);
+  $('expand').querySelector('span').textContent=state?'Close':'Expand';
+  document.body.classList.toggle('explorer-open',state);
+}
+$('expand').onclick=()=>setExpanded($('expand').getAttribute('aria-pressed')==='false');
+window.addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&!$('pixel').open)setExpanded(false);
+});
+function selectDay(day){
+  selected=dayAt(year,month,day);
+  interval=null;
+  render();
+}
+function stopReplay(){
+  clearInterval(replayTimer);
+  replayTimer=null;
+  $('play').textContent='▶';
+  $('play').setAttribute('aria-label','Play timeline');
+}
+function startReplay(){
+  const first=selected&&Number(selected.slice(-2))<monthLength()?Number(selected.slice(-2)):1;
+  selectDay(first);
+  $('play').textContent='Ⅱ';
+  $('play').setAttribute('aria-label','Pause timeline');
+  replayTimer=setInterval(()=>{
+    const day=Number(selected.slice(-2));
+    if(day>=monthLength()){stopReplay();return}
+    selectDay(day+1);
+  },Number($('speed').value));
+}
+$('play').onclick=()=>replayTimer?stopReplay():startReplay();
+$('replay-day').oninput=()=>{stopReplay();selectDay(Number($('replay-day').value))};
+$('speed').onchange=()=>{if(replayTimer){stopReplay();startReplay()}};
+updateCamera();
+function changeMonth(delta){stopReplay();const d=new Date(Date.UTC(year,month-1+delta,1));year=d.getUTCFullYear();month=d.getUTCMonth()+1;selected=null;interval=null;render()}
 $('prev').onclick=()=>changeMonth(-1);$('next').onclick=()=>changeMonth(1);
-$('clear').onclick=()=>{selected=null;interval=null;render()};$('sensor').onchange=render;$('reset-chart').onclick=render;
+$('clear').onclick=()=>{stopReplay();selected=null;interval=null;render()};$('sensor').onchange=render;$('reset-chart').onclick=render;
 $('import').onclick=()=>$('files').click();
 $('files').onchange=async()=>{
   try{
     const data=(await Promise.all([...$('files').files].map(async f=>parseFirms(await f.text())))).flat();
     if(!data.length)throw Error('No recognizable MODIS or VIIRS observations inside the study area.');
-    cells=cellDays(data);sample=false;const latest=data.map(r=>r.date).sort().at(-1);year=+latest.slice(0,4);month=+latest.slice(5,7);selected=null;interval=null;render();
+    stopReplay();cells=cellDays(data);sample=false;const latest=data.map(r=>r.date).sort().at(-1);year=+latest.slice(0,4);month=+latest.slice(5,7);selected=null;interval=null;render();
   }catch(e){$('data-note').textContent='Import failed. '+e.message}
   $('files').value='';
 };
@@ -141,6 +230,7 @@ function route(){
   }
   $('fire').hidden=route!=='fire';$('preview').hidden=route==='fire';
   if(route==='fire')return;
+  stopReplay();setExpanded(false);
   const wrap=make('div');
   wrap.append(make('div','eyebrow','MODULE PREVIEW'),make('h1','',title),make('p','',route==='trends'?'Explore how precipitation and other Earth variables change over time.':'Compare radar acquisitions to investigate surface change.' ));
   const card=make('article','card preview-visual');

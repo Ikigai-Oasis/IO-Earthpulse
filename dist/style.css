@@ -15,3 +15,32 @@
 .chart-values{display:flex;flex-wrap:wrap;gap:5px;padding:0 14px 12px;font-size:11px;color:var(--muted)}
 .chart-values span{border:1px solid var(--line);border-radius:4px;padding:2px 5px}
 @media (prefers-reduced-motion:reduce){.map-plane{transition:none}}
+
+/* Explorer and playback */
+.workspace{grid-template-columns:minmax(0,1.9fr) minmax(270px,1fr)}
+.map-card{background:linear-gradient(150deg,#111b20,#101719)}
+.map{height:382px;background:radial-gradient(ellipse at center,#17303b 0%,#0b171f 46%,#070d13 82%);perspective:850px}
+.map:after{content:'';position:absolute;inset:0;background:radial-gradient(circle at 35% 30%,#afcbd558 0 1px,transparent 1.5px) 0 0/51px 61px,radial-gradient(circle at 66% 64%,#afcbd535 0 1px,transparent 1.5px) 0 0/79px 87px;pointer-events:none;z-index:-1}
+.map-plane{transform:scale(var(--zoom,1))}
+.map.tilted{cursor:grab;touch-action:pan-y}
+.map.tilted.dragging{cursor:grabbing;touch-action:none}
+.map.dragging .map-plane{transition:none}
+.map.tilted .map-plane{transform:translateY(8px) rotateX(var(--pitch,44deg)) rotateZ(var(--bearing,-8deg)) scale(calc(var(--zoom,1)*.82));box-shadow:0 10px 0 #183236,0 16px 25px #0009,0 0 24px #77bbc028}
+.view-tools{position:absolute;right:12px;top:12px;display:grid;gap:5px;z-index:4}
+.view-tools button{padding:4px;width:34px;font-size:16px;background:#0d1b22e8}
+.camera-hint{position:absolute;left:12px;bottom:12px;padding:4px 7px;border:1px solid var(--line);border-radius:5px;background:#0a121bdd;color:var(--muted);font-size:10px;pointer-events:none}
+.map-credit{z-index:4}
+.replay{padding:10px 14px 12px;border-top:1px solid var(--line)}
+.replay-controls{display:flex;align-items:center;gap:9px}
+.replay-controls label{font-weight:650}
+.replay-controls output{color:var(--muted);margin-left:auto;font-size:12px}
+.replay-controls button{min-width:34px;color:var(--green);padding:4px 7px}
+.replay-controls select{padding:3px 6px}
+.replay>input{width:100%;margin:10px 0 5px;accent-color:var(--orange);cursor:ew-resize}
+.replay-notes{display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:11px}
+.explorer-open{overflow:hidden}
+.map-card.expanded{position:fixed;inset:10px;z-index:8;display:grid;grid-template-rows:auto minmax(0,1fr) auto;box-shadow:0 0 0 20px #0a0f13}
+.map-card.expanded .map{height:auto}
+.map-card.expanded .map-plane{max-width:1250px;margin:auto}
+@media(max-width:940px){.workspace{grid-template-columns:minmax(0,1fr)}.calendar-body{max-width:560px}.day{aspect-ratio:2}}
+@media(max-width:520px){.map{height:290px}.map-tools{gap:3px}.map-tools button,.map-tools select{font-size:11px;padding:5px 6px}.card-head{padding-inline:10px}.camera-hint{max-width:58%}}
