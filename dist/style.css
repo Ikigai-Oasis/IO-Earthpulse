@@ -44,3 +44,22 @@
 .map-card.expanded .map-plane{max-width:1250px;margin:auto}
 @media(max-width:940px){.workspace{grid-template-columns:minmax(0,1fr)}.calendar-body{max-width:560px}.day{aspect-ratio:2}}
 @media(max-width:520px){.map{height:290px}.map-tools{gap:3px}.map-tools button,.map-tools select{font-size:11px;padding:5px 6px}.card-head{padding-inline:10px}.camera-hint{max-width:58%}}
+
+.camera-stage{position:absolute;inset:0;perspective:850px;transform-origin:0 0;transform:translate(var(--stage-x,0px),var(--stage-y,0px)) scale(var(--stage-zoom,1))}
+.map .map-plane{transform:none}
+.map.tilted .map-plane{transform:translateY(8px) rotateX(var(--pitch,44deg)) rotateZ(var(--bearing,-8deg)) scale(.82)}
+.map,.map.tilted,.map.tilted.dragging{touch-action:none}
+.map:not(.tilted){cursor:grab}
+.map.regional-basemap .map-label{display:none}
+.map.regional-basemap .map-plane{background-color:#182e38}
+.map.regional-basemap .map-plane:before{background:linear-gradient(#82aeb420 1px,transparent 1px) 0 0/12.5% 16.666%,linear-gradient(90deg,#82aeb420 1px,transparent 1px) 0 0/12.5% 16.666%,#06151935}
+.view-tools output{text-align:center;font-size:10px;color:var(--green)}
+.replay-notes label{display:flex;align-items:center;gap:5px}
+.replay-notes select{padding:2px 4px;font-size:11px}
+.hot.unavailable-power{background:#a1aaaf;border-color:#d6dee0}
+.hot.unavailable-power:after{display:none}
+#bounds-dialog form{float:none}
+.bounds-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}
+.bounds-fields label{display:flex;flex-direction:column;gap:4px}
+.bounds-fields input{width:100%;padding:6px;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:5px}
+#bounds-error{color:var(--orange);margin-bottom:8px}

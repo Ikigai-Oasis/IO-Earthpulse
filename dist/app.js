@@ -1,8 +1,9 @@
-import {bounds,dayAt,parseFirms,cellDays,filterCells,peakWeek,sampleRows,seasonComparison} from './engine.mjs';
+import {regions,within,validBounds,zoomAt,dayAt,parseFirms,cellDays,filterCells,peakWeek,sampleRows,seasonComparison} from './engine.mjs';
 const $=id=>document.getElementById(id);
 const make=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el};
 const format=(date,options={month:'short',day:'numeric'})=>new Intl.DateTimeFormat('en-CA',{...options,timeZone:'UTC'}).format(new Date(date+'T00:00:00Z'));
-let cells=cellDays(sampleRows()), sample=true, year=2026, month=7, selected=null, interval=null;
+let observations=sampleRows(), regionKey='thunderbay', region=regions.thunderbay;
+let cells=cellDays(observations), sample=true, year=2026, month=7, selected=null, interval=null;
 let replayTimer=null;
 const sensor=()=>$('sensor').value;
 const monthLength=()=>new Date(Date.UTC(year,month,0)).getUTCDate();
@@ -26,7 +27,7 @@ function showChart(items,title,note,analysis=false,unit='observed hotspot cell-d
 }
 function mapCells(c){
   const [start,end]=currentBounds();
-  $('map-date').textContent=period(start,end)+' · '+sensor();
+  $('map-date').textContent=period(start,end)+' UTC · '+sensor();
   const byLocation=new Map();
   for(const point of c){
     const key=point.x+':'+point.y;
@@ -34,17 +35,25 @@ function mapCells(c){
     byLocation.get(key).push(point);
   }
   $('scale-note').textContent=c.length?byLocation.size.toLocaleString()+' mapped cells':'No matching records';
-  $('markers').replaceChildren(...[...byLocation.values()].map(points=>{
+  const showPower=$('metric').value==='frp';
+  const groups=[...byLocation.values()];
+  const visible=groups.length<=2500?groups:groups.sort((a,b)=>b.length-a.length).slice(0,2500);
+  if(visible.length<groups.length)$('scale-note').textContent='Showing '+visible.length.toLocaleString()+' of '+groups.length.toLocaleString()+' cells · analysis includes all';
+  $('markers').replaceChildren(...visible.map(points=>{
     const p=points[0];
     const pin=make('button','hot');
-    pin.style.left=((p.lon-bounds.west)/(bounds.east-bounds.west)*100)+'%';
-    pin.style.top=((bounds.north-p.lat)/(bounds.north-bounds.south)*100)+'%';
+    pin.style.left=clamp((p.lon-region.west)/(region.east-region.west)*100,0,100)+'%';
+    pin.style.top=clamp((region.north-p.lat)/(region.north-region.south)*100,0,100)+'%';
     const records=points.flatMap(x=>x.records).filter(r=>sensor()==='Combined'||r.sensor===sensor());
-    pin.style.setProperty('--column-height',(Math.min(64,6+points.length*7))+'px');
+    const peakPower=records.reduce((max,r)=>Number.isFinite(r.frp)?Math.max(max??0,r.frp):max,null);
+    pin.style.setProperty('--column-height',(showPower?(peakPower===null?0:Math.min(64,6+Math.sqrt(peakPower)*4)):Math.min(64,6+points.length*7))+'px');
+    pin.classList.toggle('unavailable-power',showPower&&peakPower===null);
+
     pin.title=p.lat.toFixed(2)+', '+p.lon.toFixed(2)+' · '+points.length+' cell-days';
     pin.setAttribute('aria-label',pin.title);
     pin.addEventListener('click',()=>{
-      $('pixel-content').replaceChildren(make('p','',pin.title),...records.map(r=>make('div','',r.utc+' · '+r.sensor+' · '+(r.satellite||'Unknown satellite')+(r.confidence?' · Confidence '+r.confidence:''))));
+      stopReplay();
+      $('pixel-content').replaceChildren(make('p','',pin.title),...records.map(r=>make('div','',r.utc+' · '+r.sensor+' · '+(r.satellite||'Unknown satellite')+(r.confidence?' · Confidence '+r.confidence:'')+(Number.isFinite(r.frp)?' · '+r.frp+' MW FRP':''))));
       $('pixel').showModal();
     });return pin;
   }));
@@ -93,7 +102,7 @@ function analyze(operation){
     const buckets=[0,0,0];
     for(const days of locations.values()) buckets[Math.min(days,3)-1]++;
     showChart(['1 day','2 days','3+ days'].map((label,index)=>({label,value:buckets[index]})),'Repeat hotspot observations',period(start,end)+' · unique grid cells',true,'grid cells');
-    $('analysis-result').textContent=locations.size?(buckets[1]+buckets[2])+' of '+locations.size+' mapped cells had observations on multiple local days. Repeat detections alone cannot establish whether the same fire persisted.':'No records in this selection.';
+    $('analysis-result').textContent=locations.size?(buckets[1]+buckets[2])+' of '+locations.size+' mapped cells had observations on multiple UTC days. Repeat detections alone cannot establish whether the same fire persisted.':'No records in this selection.';
     return;
   }
   if(operation==='week'){
@@ -125,24 +134,35 @@ function analyze(operation){
 }
 for(const b of document.querySelectorAll('[data-analysis]'))b.addEventListener('click',()=>analyze(b.dataset.analysis));
 const map=$('map');
-const camera={pitch:44,bearing:-8,zoom:1,orbit:true};
+const camera={pitch:44,bearing:-8,zoom:1,x:0,y:0,orbit:true};
 const clamp=(value,min,max)=>Math.min(max,Math.max(min,value));
+function resetCamera(){
+  Object.assign(camera,{pitch:44,bearing:-8,zoom:1,x:0,y:0});
+  updateCamera();
+}
+function zoom(factor,x=map.clientWidth/2,y=map.clientHeight/2){
+  Object.assign(camera,zoomAt(camera,factor,x,y));
+  updateCamera();
+}
 function updateCamera(){
   map.classList.toggle('tilted',camera.orbit);
   map.style.setProperty('--pitch',camera.pitch+'deg');
   map.style.setProperty('--bearing',camera.bearing+'deg');
-  map.style.setProperty('--zoom',camera.zoom);
+  map.style.setProperty('--stage-zoom',camera.zoom);
+  map.style.setProperty('--stage-x',camera.x+'px');
+  map.style.setProperty('--stage-y',camera.y+'px');
+  $('zoom-readout').textContent=camera.zoom.toFixed(1)+'×';
   $('tilt').setAttribute('aria-pressed',camera.orbit);
   $('tilt').textContent=camera.orbit?'Orbit':'Top down';
-  $('camera-hint').textContent=camera.orbit?'Drag to orbit · Select a hotspot for evidence':'Top-down view · Select a hotspot for evidence';
+  $('camera-hint').textContent=camera.orbit?'Drag to orbit · Scroll to zoom':'Drag to pan · Scroll to zoom';
 }
 $('tilt').onclick=()=>{camera.orbit=!camera.orbit;updateCamera()};
 for(const control of document.querySelectorAll('[data-camera]')){
   control.onclick=()=>{
     const action=control.dataset.camera;
-    if(action==='reset')Object.assign(camera,{pitch:44,bearing:-8,zoom:1});
-    if(action==='zoom-in')camera.zoom=clamp(camera.zoom+.15,.65,1.75);
-    if(action==='zoom-out')camera.zoom=clamp(camera.zoom-.15,.65,1.75);
+    if(action==='reset')resetCamera();
+    if(action==='zoom-in')zoom(1.25);
+    if(action==='zoom-out')zoom(.8);
     if(action==='left'||action==='right'){
       camera.orbit=true;
       camera.bearing+=action==='left'?-15:15;
@@ -150,23 +170,57 @@ for(const control of document.querySelectorAll('[data-camera]')){
     updateCamera();
   };
 }
-let drag=null;
+map.addEventListener('wheel',event=>{
+  if(event.target.closest('.view-tools'))return;
+  event.preventDefault();
+  const rect=map.getBoundingClientRect();
+  const delta=event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?map.clientHeight:1);
+  zoom(Math.exp(clamp(-delta*.002,-.4,.4)),event.clientX-rect.left,event.clientY-rect.top);
+},{passive:false});
+const pointers=new Map();
+let gesture=null;
+function resetGesture(){
+  const [first,second]=pointers.values();
+  gesture=second?{
+    distance:Math.max(1,Math.hypot(first.x-second.x,first.y-second.y)),
+    x:(first.x+second.x)/2,y:(first.y+second.y)/2
+  }:first?{...first}:null;
+}
 map.addEventListener('pointerdown',event=>{
-  if(!camera.orbit||event.button!==0||event.target.closest('button'))return;
-  drag={id:event.pointerId,x:event.clientX,y:event.clientY,pitch:camera.pitch,bearing:camera.bearing};
+  if(event.button!==0||event.target.closest('button')||pointers.size>=2)return;
+  pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
   map.setPointerCapture(event.pointerId);
   map.classList.add('dragging');
+  resetGesture();
 });
 map.addEventListener('pointermove',event=>{
-  if(!drag||event.pointerId!==drag.id)return;
-  camera.bearing=drag.bearing+(event.clientX-drag.x)*.28;
-  camera.pitch=clamp(drag.pitch+(event.clientY-drag.y)*.24,18,66);
+  if(!pointers.has(event.pointerId)||!gesture)return;
+  pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+  const previous=gesture;
+  resetGesture();
+  const dx=gesture.x-previous.x,dy=gesture.y-previous.y;
+  if(pointers.size===2){
+    const rect=map.getBoundingClientRect();
+    Object.assign(camera,zoomAt(camera,gesture.distance/previous.distance,previous.x-rect.left,previous.y-rect.top));
+    camera.x+=dx;camera.y+=dy;
+  }else if(camera.orbit&&!event.shiftKey){
+    camera.bearing+=dx*.28;
+    camera.pitch=clamp(camera.pitch+dy*.24,18,66);
+  }else{
+    camera.x+=dx;camera.y+=dy;
+  }
   updateCamera();
 });
 for(const type of ['pointerup','pointercancel','lostpointercapture']){
-  map.addEventListener(type,()=>{drag=null;map.classList.remove('dragging')});
+  map.addEventListener(type,event=>{
+    pointers.delete(event.pointerId);
+    resetGesture();
+    if(!pointers.size)map.classList.remove('dragging');
+  });
 }
 function setExpanded(state){
+  if($('map-card').classList.contains('expanded')===state)return;
+  resetCamera();
   $('map-card').classList.toggle('expanded',state);
   $('expand').setAttribute('aria-pressed',state);
   $('expand').querySelector('span').textContent=state?'Close':'Expand';
@@ -209,17 +263,64 @@ $('import').onclick=()=>$('files').click();
 $('files').onchange=async()=>{
   try{
     const data=(await Promise.all([...$('files').files].map(async f=>parseFirms(await f.text())))).flat();
-    if(!data.length)throw Error('No recognizable MODIS or VIIRS observations inside the study area.');
-    stopReplay();cells=cellDays(data);sample=false;const latest=data.map(r=>r.date).sort().at(-1);year=+latest.slice(0,4);month=+latest.slice(5,7);selected=null;interval=null;render();
+    if(!data.length)throw Error('No recognizable MODIS or VIIRS observations in the selected CSVs.');
+    stopReplay();observations=data;sample=false;const latest=data.map(r=>r.date).sort().at(-1);year=+latest.slice(0,4);month=+latest.slice(5,7);setRegion('world',regions.world);
   }catch(e){$('data-note').textContent='Import failed. '+e.message}
   $('files').value='';
 };
 $('export').onclick=()=>{
   const [start,end]=currentBounds();
   const rows=filterCells(cells,start,end,sensor()).flatMap(c=>c.records).filter(r=>sensor()==='Combined'||r.sensor===sensor());
-  const csv=[['dataset','local_date','utc','latitude','longitude','instrument'],...rows.map(r=>[sample?'simulated':'imported_firms',r.date,r.utc,r.lat,r.lon,r.sensor])].map(r=>r.join(',')).join('\n');
+  const csv=[['dataset','utc_date','utc','latitude','longitude','instrument','frp_mw'],...rows.map(r=>[sample?'simulated':'imported_firms',r.date,r.utc,r.lat,r.lon,r.sensor,r.frp??''])].map(r=>r.join(',')).join('\n');
   const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));const a=make('a');a.href=url;a.download='io-earthpulse-'+start+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
+function basemapUrl({west,east,south,north}){
+  const ratio=(east-west)/(north-south);
+  const width=Math.max(1,Math.round(Math.min(1440,720*ratio)));
+  const height=Math.max(1,Math.round(Math.min(720,1440/ratio)));
+  const query=new URLSearchParams({bbox:[west,south,east,north].join(','),bboxSR:'4326',imageSR:'4326',size:width+','+height,format:'jpg',f:'image'});
+  return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?'+query;
+}
+function setRegion(key,box){
+  stopReplay();
+  regionKey=key;
+  region=box;
+  $('region').value=key;
+  $('edit-bounds').hidden=key!=='custom';
+  $('map-heading').textContent=$('region').selectedOptions[0].textContent.replace('…','')+' explorer';
+  const plane=document.querySelector('.map-plane');
+  plane.style.backgroundImage=key==='thunderbay'?'url(terrain.jpg)':'url("'+basemapUrl(box)+'")';
+  map.classList.toggle('regional-basemap',key!=='thunderbay');
+  cells=cellDays(observations.filter(row=>within(row.lat,row.lon,box)));
+  selected=null;interval=null;
+  resetCamera();
+  render();
+}
+$('region').onchange=()=>{
+  const key=$('region').value;
+  if(key!=='custom'){setRegion(key,regions[key]);return}
+  openBounds();
+};
+function openBounds(){
+  for(const field of ['west','south','east','north'])$(field).value=region[field];
+  $('bounds-error').textContent='';
+  $('bounds-dialog').showModal();
+}
+$('edit-bounds').onclick=openBounds;
+$('cancel-bounds').onclick=()=>$('bounds-dialog').close();
+$('bounds-dialog').onclose=()=>{$('region').value=regionKey};
+$('bounds-form').onsubmit=event=>{
+  event.preventDefault();
+  const box=Object.fromEntries(['west','south','east','north'].map(key=>[key,$(key).valueAsNumber]));
+  if(!validBounds(box)){
+    $('bounds-error').textContent='West must be less than east, and south less than north. Use two views for regions across the date line.';
+    return;
+  }
+  setRegion('custom',box);
+  $('bounds-dialog').close();
+};
+$('metric').onchange=()=>mapCells(filterCells(cells,...currentBounds(),sensor()));
+window.addEventListener('resize',resetCamera);
 function route(){
   const route=['trends','radar'].includes(location.hash.slice(1))?location.hash.slice(1):'fire';
   const title={fire:'Fire Intelligence',trends:'Earth Trends',radar:'Radar Change'}[route];

@@ -1,7 +1,28 @@
-const zone = new Intl.DateTimeFormat('en-CA',{timeZone:'America/Thunder_Bay',year:'numeric',month:'2-digit',day:'2-digit'});
 export const bounds = {west:-94,east:-85,south:47,north:52};
 export const dayAt = (year,month,day) => new Date(Date.UTC(year,month-1,day)).toISOString().slice(0,10);
 export const inside = (lat,lon) => lat>=bounds.south && lat<=bounds.north && lon>=bounds.west && lon<=bounds.east;
+export const regions = {
+  world:{west:-180,east:180,south:-90,north:90},
+  thunderbay:bounds,
+  canada:{west:-142,east:-52,south:41,north:84},
+  westus:{west:-126,east:-101,south:31,north:50},
+  amazon:{west:-82,east:-44,south:-23,north:10},
+  mediterranean:{west:-11,east:37,south:29,north:47},
+  southernAfrica:{west:10,east:42,south:-36,north:-8},
+  southeastAsia:{west:92,east:142,south:-12,north:29},
+  australia:{west:112,east:154,south:-44,north:-10}
+};
+export function validBounds({west,east,south,north}){
+  return [west,east,south,north].every(Number.isFinite) && west>=-180 && east<=180 && south>=-90 && north<=90 && west<east && south<north;
+}
+export function within(lat,lon,{west,east,south,north}){
+  return lat>=south && lat<=north && lon>=west && lon<=east;
+}
+export function zoomAt(camera,factor,px,py){
+  const zoom=Math.max(.65,Math.min(5,camera.zoom*factor));
+  const ratio=zoom/camera.zoom;
+  return {zoom,x:px-(px-camera.x)*ratio,y:py-(py-camera.y)*ratio};
+}
 export function parseFirms(csv) {
   const lines = csv.replace(/^\uFEFF/,'').trim().split(/\r?\n/);
   const split = line => line.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(x=>x.trim().replace(/^"|"$/g,''));
@@ -15,22 +36,29 @@ export function parseFirms(csv) {
     const lat=Number(get('latitude')),lon=Number(get('longitude'));
     const satellite=get('satellite');
     const sensor=(get('instrument') || (['Aqua','Terra','A','T'].includes(satellite)?'MODIS':['N','N20','N21','NOAA-20','NOAA-21','Suomi NPP'].includes(satellite)?'VIIRS':'')).toUpperCase();
-    const time=get('acq_time').padStart(4,'0');
+    const acqTime=get('acq_time');
+    if(!acqTime)continue;
+    const time=acqTime.padStart(4,'0');
     const date=get('acq_date');
-    if(!inside(lat,lon)||!['MODIS','VIIRS'].includes(sensor)||!/^\d{4}-\d{2}-\d{2}$/.test(date)||!/^\d{4}$/.test(time)||+time.slice(0,2)>23||+time.slice(2)>59)continue;
+    if(!get('latitude')||!get('longitude')||!within(lat,lon,regions.world)||!['MODIS','VIIRS'].includes(sensor)||!/^\d{4}-\d{2}-\d{2}$/.test(date)||!/^\d{4}$/.test(time)||+time.slice(0,2)>23||+time.slice(2)>59)continue;
     const utc=new Date(date+'T'+time.slice(0,2)+':'+time.slice(2)+':00Z');
     if(!Number.isFinite(+utc)||utc.toISOString().slice(0,10)!==date)continue;
-    const parts=Object.fromEntries(zone.formatToParts(utc).map(x=>[x.type,x.value]));
-    rows.push({lat,lon,sensor,satellite,date:parts.year+'-'+parts.month+'-'+parts.day,utc:utc.toISOString(),confidence:get('confidence'),version:get('version')});
+    const frp=get('frp') && Number(get('frp'))>=0 && Number.isFinite(Number(get('frp'))) ? Number(get('frp')) : null;
+    rows.push({lat,lon,sensor,satellite,date,utc:utc.toISOString(),confidence:get('confidence'),version:get('version'),frp});
+
   }
   return rows;
 }
 export function cellDays(rows) {
   const cells=new Map();
   for(const r of rows){
-    const x=Math.floor((r.lon-bounds.west)*73/2),y=Math.floor((r.lat-bounds.south)*111/2);
+    const step=2/111;
+    const y=Math.min(Math.ceil(180/step)-1,Math.floor((r.lat+90)/step));
+    const lat=Math.min(90,-90+(y+.5)*step);
+    const columns=Math.max(1,Math.ceil(360*111*Math.cos(lat*Math.PI/180)/2));
+    const x=Math.min(columns-1,Math.floor((r.lon+180)*columns/360));
     const key=r.date+':'+x+':'+y;
-    if(!cells.has(key)) cells.set(key,{x,y,date:r.date,lat:bounds.south+(y+.5)*2/111,lon:bounds.west+(x+.5)*2/73,sensors:new Set(),records:[]});
+    if(!cells.has(key)) cells.set(key,{x,y,date:r.date,lat,lon:-180+(x+.5)*360/columns,sensors:new Set(),records:[]});
     const c=cells.get(key);
     c.sensors.add(r.sensor);c.records.push(r);
   }
@@ -55,8 +83,8 @@ export function sampleRows(){
     const count=Math.floor(rng()*4+pulse*(year===2026?22:8+(year%3)*5));
     for(let i=0;i<count;i++){
       const date=dayAt(year,7,day),lat=48.95+rng()*2.25,lon=-92.7+rng()*5.9,sensor=rng()>.34?'VIIRS':'MODIS';
-      rows.push({date,lat,lon,sensor,utc:date+'T17:15:00Z',satellite:'Sample'});
-      if(rng()>.77)rows.push({date,lat,lon,sensor:sensor==='MODIS'?'VIIRS':'MODIS',utc:date+'T19:15:00Z',satellite:'Sample'});
+      rows.push({date,lat,lon,sensor,utc:date+'T17:15:00Z',satellite:'Sample',frp:Math.round(4+58*pulse)});
+      if(rng()>.77)rows.push({date,lat,lon,sensor:sensor==='MODIS'?'VIIRS':'MODIS',utc:date+'T19:15:00Z',satellite:'Sample',frp:Math.round(4+58*pulse)});
     }
   }
   return rows;
