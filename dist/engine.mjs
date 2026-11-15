@@ -61,3 +61,22 @@ export function sampleRows(){
   }
   return rows;
 }
+
+export function seasonComparison(cells,start,end,sensor){
+  const currentYear=start.slice(0,4);
+  const years=[...new Set(cells.map(cell=>cell.date.slice(0,4)))].sort();
+  const items=years.filter(year=>year<=currentYear).map(label=>({
+    label,
+    value:filterCells(cells,label+start.slice(4),label+end.slice(4),sensor).length
+  })).filter(item=>item.value>0);
+  const prior=items.filter(item=>item.label<currentYear);
+  const values=prior.map(item=>item.value).sort((a,b)=>a-b);
+  const middle=Math.floor(values.length/2);
+  const median=!values.length?null:values.length%2?values[middle]:(values[middle-1]+values[middle])/2;
+  return {
+    items,
+    current:items.find(item=>item.label===currentYear)?.value??null,
+    baseline:prior.map(item=>item.label),
+    median
+  };
+}

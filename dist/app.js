@@ -1,4 +1,4 @@
-import {bounds,dayAt,parseFirms,cellDays,filterCells,peakWeek,sampleRows} from './engine.mjs';
+import {bounds,dayAt,parseFirms,cellDays,filterCells,peakWeek,sampleRows,seasonComparison} from './engine.mjs';
 const $=id=>document.getElementById(id);
 const make=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el};
 const format=(date,options={month:'short',day:'numeric'})=>new Intl.DateTimeFormat('en-CA',{...options,timeZone:'UTC'}).format(new Date(date+'T00:00:00Z'));
@@ -12,6 +12,8 @@ function showChart(items,title,note,analysis=false){
   $('chart-title').textContent=title;
   $('chart-note').textContent=note;
   $('reset-chart').hidden=!analysis;
+  $('chart-values').hidden=!analysis;
+  $('chart-values').replaceChildren(...items.map(item=>make('span','',item.label+' · '+item.value.toLocaleString())));
   const max=Math.max(1,...items.map(x=>x.value));
   $('chart').replaceChildren(...items.map(item=>{
     const col=make('div','bar-col');const track=make('div','bar-track');const bar=make('div','bar');
@@ -30,12 +32,14 @@ function mapCells(c){
     if(!byLocation.has(key))byLocation.set(key,[]);
     byLocation.get(key).push(point);
   }
+  const maxDays=Math.max(1,...[...byLocation.values()].map(points=>points.length));
   $('markers').replaceChildren(...[...byLocation.values()].map(points=>{
     const p=points[0];
     const pin=make('button','hot');
     pin.style.left=((p.lon-bounds.west)/(bounds.east-bounds.west)*100)+'%';
     pin.style.top=((bounds.north-p.lat)/(bounds.north-bounds.south)*100)+'%';
     const records=points.flatMap(x=>x.records).filter(r=>sensor()==='Combined'||r.sensor===sensor());
+    pin.style.setProperty('--column-height',(8+48*points.length/maxDays)+'px');
     pin.title=p.lat.toFixed(2)+', '+p.lon.toFixed(2)+' · '+points.length+' cell-days';
     pin.setAttribute('aria-label',pin.title);
     pin.addEventListener('click',()=>{
@@ -90,12 +94,25 @@ function analyze(operation){
     $('analysis-result').textContent='The combined result counts overlapping grid cells once per day. Differences may reflect sensor sensitivity and observation schedules.';
     return;
   }
-  const years=[...new Set(cells.map(c=>c.date.slice(0,4)))].sort();
-  const items=years.filter(y=>cells.some(c=>c.date>=y+start.slice(4)&&c.date<=y+end.slice(4)&&(sensor()==='Combined'||c.sensors.has(sensor())))).map(label=>({label,value:filterCells(cells,label+start.slice(4),label+end.slice(4),sensor()).length}));
-  showChart(items,'Same dates across seasons',period(start,end)+' · '+sensor(),true);
-  $('analysis-result').textContent=items.length>1?'Compared '+items.length+' years with records in this window. Years without matching records are omitted. Coverage may vary.':'This selection needs observations from at least two years for a seasonal comparison.';
+  const comparison=seasonComparison(cells,start,end,sensor());
+  showChart(comparison.items,'Same dates across seasons',period(start,end)+' · '+sensor(),true);
+  const {current,median,baseline}=comparison;
+  if(current===null||baseline.length<2){
+    $('analysis-result').textContent='A baseline needs records for the selected year and at least two prior years. Years without matching records are omitted.';
+    return;
+  }
+  const delta=current-median;
+  const change=delta===0?'matched':(median>0?Math.round(Math.abs(delta)/median*100)+'% '+(delta>0?'above':'below'):'above');
+  $('analysis-result').textContent=start.slice(0,4)+' recorded '+current+' hotspot cell-days and '+(delta===0?'matched':'was '+change)+' the prior-year median of '+median+' ('+baseline.join(', ')+'). Differences may reflect uneven satellite coverage.';
+
 }
 for(const b of document.querySelectorAll('[data-analysis]'))b.addEventListener('click',()=>analyze(b.dataset.analysis));
+$('tilt').onclick=()=>{
+  const active=$('map').classList.toggle('tilted');
+  $('tilt').setAttribute('aria-pressed',active);
+  $('tilt').textContent=active?'2D view':'3D view';
+  $('map-scale').textContent=active?'Column height = observed days per cell':'Northwestern Ontario';
+};
 function changeMonth(delta){const d=new Date(Date.UTC(year,month-1+delta,1));year=d.getUTCFullYear();month=d.getUTCMonth()+1;selected=null;interval=null;render()}
 $('prev').onclick=()=>changeMonth(-1);$('next').onclick=()=>changeMonth(1);
 $('clear').onclick=()=>{selected=null;interval=null;render()};$('sensor').onchange=render;$('reset-chart').onclick=render;
