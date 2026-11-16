@@ -1,3 +1,4 @@
+import {setupStreet} from './street.mjs';
 import {createGlobe} from './globe.mjs';
 import {regions,within,validBounds,zoomAt,dayAt,parseFirms,cellDays,filterCells,peakWeek,sampleRows,seasonComparison} from './engine.mjs';
 const $=id=>document.getElementById(id);
@@ -56,6 +57,7 @@ function mapCells(c){
     pin.title=p.lat.toFixed(2)+', '+p.lon.toFixed(2)+' · '+points.length+' cell-days';
     pin.setAttribute('aria-label',pin.title);
     pin.addEventListener('click',()=>{
+      hotspotLocation={lat:records[0]?.lat??p.lat,lng:records[0]?.lon??p.lon};
       stopReplay();
       $('pixel-content').replaceChildren(make('p','',pin.title),...records.map(r=>make('div','',r.utc+' · '+r.sensor+' · '+(r.satellite||'Unknown satellite')+(r.confidence?' · Confidence '+r.confidence:'')+(Number.isFinite(r.frp)?' · '+r.frp+' MW FRP':''))));
       $('pixel').showModal();
@@ -77,7 +79,7 @@ function render(){
   $('replay-day').value=(selected??interval?.[0]??first).slice(-2);
   $('replay-label').textContent=selected?format(selected):interval?period(...interval):'Whole month';
   $('month').textContent=format(first,{month:'long',year:'numeric'});
-  $('data-note').textContent=firmsConnected?'NASA FIRMS · '+($('nasa-date').value?'Selected UTC day':'Latest available UTC day in the 3-day window')+' · Dates without records have unknown coverage.':sample?'Demo data · Simulated hotspots, not live NASA observations. Import FIRMS CSVs to analyze actual observations.':'Imported FIRMS CSVs · Observations only. Dates without records have unknown coverage.';
+  $('data-note').textContent=firmsConnected?firmsStatus:sample?'Demo data · Simulated hotspots, not live NASA observations. Import FIRMS CSVs to analyze actual observations.':'Imported FIRMS CSVs · Observations only. Dates without records have unknown coverage.';
   const max=Math.max(1,...counts.values());
   const buttons=Array.from({length:(new Date(first+'T00:00:00Z').getUTCDay()+6)%7},()=>make('span'));
   const chart=[];
@@ -386,6 +388,7 @@ function setGlobeTexture(url,ticket){
 }
 let firmsRequest;
 let firmsConnected=false;
+let firmsStatus='';
 let replayObservations=observations;
 let replaySample=true;
 function loadFirms(ticket){
@@ -398,8 +401,9 @@ function loadFirms(ticket){
     .then(async response=>{
       const payload=await response.json();
       if(!response.ok)throw Error(payload.message);
-      return payload.feeds.flatMap(feed=>parseFirms(feed.csv));
-    }).then(rows=>{
+      return payload;
+    }).then(payload=>{
+      const rows=payload.feeds.flatMap(feed=>parseFirms(feed.csv));
       if(ticket!==imageRequest)return;
       observations=rows;
       sample=false;
@@ -407,6 +411,9 @@ function loadFirms(ticket){
       const date=parameters.get('date')||rows.map(r=>r.date).sort().at(-1)||new Date().toISOString().slice(0,10);
       year=+date.slice(0,4);month=+date.slice(5,7);
       selected=date;interval=null;
+      const context=payload.mode==='archive'?'Recent feed returned no rows. Archive '+payload.window.start+' to '+payload.window.end+' UTC.'
+        :payload.mode==='dated'?'Selected UTC day.':'Near-real-time feed · last 3 UTC days.';
+      firmsStatus='NASA FIRMS · '+context+(rows.length?' Showing '+date+' initially.':' No records returned for this region and window.');
       firmsConnected=true;
       updateSource(true);
     }).catch(error=>{
@@ -510,7 +517,27 @@ $('bounds-form').onsubmit=event=>{
 };
 $('metric').onchange=()=>mapCells(filterCells(cells,...currentBounds(),sensor()));
 window.addEventListener('resize',resetCamera);
+const streets=setupStreet();
+let streetLocation,hotspotLocation;
+$('street-from-globe').onclick=()=>{
+  streetLocation=globeOn?{lat:globeLatitude,lng:((globeLongitude+180)%360+360)%360-180}:{lat:(region.north+region.south)/2,lng:(region.west+region.east)/2};
+  location.hash='street';
+};
+$('street-from-hotspot').onclick=()=>{
+  streetLocation=hotspotLocation;
+  $('pixel').close();
+  location.hash='street';
+};
 function route(){
+  const street=location.hash==='#street';
+  $('street-view').hidden=!street;
+  if(street){
+    stopReplay();stopEarthTime();setExpanded(false);
+    $('fire').hidden=true;$('preview').hidden=true;$('crumb').textContent='Street detail';
+    streets.show(streetLocation??{lat:48.38,lng:-89.25});
+    return;
+  }
+  streets.hide();
   const route=['trends','radar'].includes(location.hash.slice(1))?location.hash.slice(1):'fire';
   const title={fire:'Fire Intelligence',trends:'Earth Trends',radar:'Radar Change'}[route];
   $('crumb').textContent=title;

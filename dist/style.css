@@ -83,3 +83,9 @@
 .globe-mode #globe-markers{z-index:2}
 .globe-mode .camera-hint{z-index:3}
 #globe-toggle[aria-pressed=true],#earth-play{color:#abdcff;border-color:#42769c;background:#13283b}
+#street-map{height:clamp(380px,65vh,840px);border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#09121a}
+.street-back{display:inline-block;margin-bottom:16px;color:var(--green)}
+.street-links{margin-top:14px}
+.street-links a{border:1px solid var(--line);border-radius:7px;padding:7px 11px;background:var(--panel)}
+#street-view button[aria-pressed=true]{border-color:var(--green);color:var(--green)}
+@media(max-width:600px){.map-tools{flex-wrap:wrap;justify-content:flex-end}}

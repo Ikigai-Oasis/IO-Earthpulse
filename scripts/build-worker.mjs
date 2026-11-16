@@ -4,6 +4,7 @@ await mkdir(output,{recursive:true});
 const assets={
   '/':['index.html','text/html; charset=utf-8'],
   '/app.js':['app.js','text/javascript; charset=utf-8'],
+  '/street.mjs':['street.mjs','text/javascript; charset=utf-8'],
   '/globe.mjs':['globe.mjs','text/javascript; charset=utf-8'],
   '/engine.mjs':['engine.mjs','text/javascript; charset=utf-8'],
   '/style.css':['style.css','text/css; charset=utf-8']
@@ -17,6 +18,10 @@ await writeFile(output+'/index.js',engine+'\n'+handler+'\nconst assets='+JSON.st
 export default {
   fetch(request,env) {
     const {pathname}=new URL(request.url);
+    if(pathname==='/api/maps-config'){
+      const key=env.GOOGLE_MAPS_BROWSER_KEY;
+      return key?Response.json({key},{headers:{'Cache-Control':'no-store'}}):new Response(null,{status:503});
+    }
     if(pathname==='/api/firms')return firms(request,env);
     const asset=Object.hasOwn(assets,pathname)?assets[pathname]:null;
     return asset?new Response(asset[0],{headers:{'Content-Type':asset[1]}}):new Response('Not found',{status:404});

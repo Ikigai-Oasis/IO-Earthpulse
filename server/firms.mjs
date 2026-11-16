@@ -17,20 +17,49 @@ export async function firms(request,env,fetchData=fetch){
   const sensor=params.get('sensor');
   if(!['MODIS','VIIRS','Combined'].includes(sensor))return error('Invalid instrument.',400);
   try{
-    const feeds=await Promise.all((sensor==='Combined'?['MODIS','VIIRS']:[sensor]).map(async instrument=>{
-      const product=products[instrument][date?1:0];
-      const path=[env.FIRMS_MAP_KEY,product,area==='world'?area:coords.join(','),date?'1':'3',...(date?[date]:[])].join('/');
-      const response=await fetchData('https://firms.modaps.eosdis.nasa.gov/api/area/csv/'+path,{redirect:'manual',signal:AbortSignal.timeout(18000)});
-      const csv=await response.text();
-      const reason=csv.trim().slice(0,160);
-      if(/^Invalid MAP_KEY\.?$/i.test(reason))throw Error('key');
+    const instruments=sensor==='Combined'?['MODIS','VIIRS']:[sensor];
+    async function nasa(path){
+      const response=await fetchData('https://firms.modaps.eosdis.nasa.gov/api/'+path,{redirect:'manual',signal:AbortSignal.timeout(18000)});
+      const body=await response.text();
+      if(/^Invalid MAP_KEY\.?$/i.test(body.trim()))throw Error('key');
       if(response.status>=300&&response.status<400)throw Error('redirect');
       if(!response.ok)throw Error('status:'+response.status);
-      const fields=csv.trimStart().split(/\r?\n/,1)[0].toLowerCase().split(',').map(field=>field.trim().replace(/^"|"$/g,''));
-      if(!response.ok||!['latitude','longitude','acq_date','acq_time'].every(field=>fields.includes(field)))throw Error('FIRMS response unavailable');
-      return {product,csv};
-    }));
-    return Response.json({feeds},{headers:{'Cache-Control':'private, max-age=120'}});
+      return body;
+    }
+    async function fetchFeeds(standard,days,start){
+      return Promise.all(instruments.map(async instrument=>{
+        const product=products[instrument][standard?1:0];
+        const path=[env.FIRMS_MAP_KEY,product,area==='world'?area:coords.join(','),days,...(start?[start]:[])].join('/');
+        const csv=await nasa('area/csv/'+path);
+        const fields=csv.trimStart().split(/\r?\n/,1)[0].toLowerCase().split(',').map(field=>field.trim().replace(/^"|"$/g,''));
+        if(!['latitude','longitude','acq_date','acq_time'].every(field=>fields.includes(field)))throw Error('FIRMS response unavailable');
+        return {product,csv};
+      }));
+    }
+    const hasRows=feeds=>feeds.some(feed=>feed.csv.trim().split(/\r?\n/).length>1);
+    let feeds=await fetchFeeds(Boolean(date),date?1:3,date);
+    let mode=date?'dated':'recent';
+    let window=null;
+    if(!date&&!hasRows(feeds)){
+      try{
+        const availability=await nasa('data_availability/csv/'+env.FIRMS_MAP_KEY+'/ALL');
+        const dates=instruments.map(instrument=>{
+          const product=products[instrument][1];
+          const line=availability.split(/\r?\n/).find(row=>row.split(',')[0].trim().replace(/^"|"$/g,'')===product);
+          return line?.match(/\d{4}-\d{2}-\d{2}/g)?.sort().at(-1);
+        });
+        if(dates.every(Boolean)){
+          const end=dates.sort()[0];
+          const start=new Date(Date.parse(end)-4*86400000).toISOString().slice(0,10);
+          feeds=await fetchFeeds(true,5,start);
+          mode='archive';
+          window={start,end};
+        }
+      }catch{
+        // Keep the successful recent response if the archive cannot be fetched.
+      }
+    }
+    return Response.json({feeds,mode,window,empty:!hasRows(feeds)},{headers:{'Cache-Control':'private, max-age:120'}});
   }catch(cause){
     if(cause.message==='key')return error('NASA FIRMS rejected the configured MAP_KEY. Check that it is the FIRMS key, rather than an api.nasa.gov developer key.',502);
     if(cause.message==='redirect')return error('NASA FIRMS redirected the request. Hotspot records could not load.',502);
