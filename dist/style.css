@@ -84,6 +84,11 @@
 .globe-mode .camera-hint{z-index:3}
 #globe-toggle[aria-pressed=true],#earth-play{color:#abdcff;border-color:#42769c;background:#13283b}
 #street-map{height:clamp(380px,65vh,840px);border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#09121a}
+.mission-deck{display:grid;grid-template-columns:minmax(150px,1fr) minmax(0,2fr);gap:12px 22px;align-items:center;margin:0 0 14px;padding:17px;border:1px solid #32464e;border-radius:12px;background:linear-gradient(120deg,#122730,#17211f 65%,#282018)}
+.mission-deck h2{margin:3px 0}.mission-deck p{font-size:12px}.mission-actions{display:flex;flex-wrap:wrap;gap:7px}.mission-actions button,.mission-actions a{font-size:12px;background:#1b3034;border:1px solid #45605f;border-radius:7px;padding:8px 10px}.mission-actions a{color:#d5e6db}.mission-note{grid-column:1/-1}
+.coordinate-search{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}.coordinate-search input{width:140px;background:#0d1b22;color:var(--text);border:1px solid #45605f;border-radius:7px;padding:8px;font:inherit}.coordinate-search button{color:var(--green)}
+.map.globe-mode{background-color:#050b13;background-image:radial-gradient(1px 1px at 11% 18%,#fff 90%,transparent),radial-gradient(1px 1px at 82% 22%,#cce9ff 90%,transparent),radial-gradient(1px 1px at 71% 78%,#fff 90%,transparent),radial-gradient(2px 2px at 31% 67%,#b4d8ff 70%,transparent),radial-gradient(ellipse at 70% 30%,#1d344c,#070d18 65%);background-size:183px 151px,247px 221px,309px 251px,389px 311px,100% 100%}
+@media(max-width:760px){.mission-deck{grid-template-columns:1fr}.mission-note{grid-column:auto}}
 .street-back{display:inline-block;margin-bottom:16px;color:var(--green)}
 .street-links{margin-top:14px}
 .street-links a{border:1px solid var(--line);border-radius:7px;padding:7px 11px;background:var(--panel)}

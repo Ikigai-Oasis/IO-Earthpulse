@@ -57,7 +57,7 @@ export async function firms(request,env,fetchData=fetch){
     }
     let mode=date?'dated':'recent';
     let window=date?{start:date,end:end??date}:null;
-    if(!date&&!hasRows(feeds)){
+    if(!date&&area==='world'&&!hasRows(feeds)){
       try{
         const availability=await nasa('data_availability/csv/'+env.FIRMS_MAP_KEY+'/ALL');
         const dates=instruments.map(instrument=>{

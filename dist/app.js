@@ -148,6 +148,10 @@ function analyze(operation){
     return;
   }
   const comparison=seasonComparison(cells,start,end,sensor());
+  if(start.slice(0,4)!==end.slice(0,4)){
+    $('analysis-result').textContent='Season comparison currently supports date ranges within one calendar year. Select a shorter period to compare.';
+    return;
+  }
   showChart(comparison.items,'Same dates across seasons',period(start,end)+' · '+sensor(),true);
   const {current,median,baseline}=comparison;
   if(current===null||baseline.length<2){
@@ -321,6 +325,23 @@ function stopReplay(){
   $('play').setAttribute('aria-label','Play timeline');
 }
 function startReplay(){
+  if(interval){
+    const [start,end]=interval;
+    let cursor=Date.parse(start);
+    const show=()=>{
+      selected=new Date(cursor).toISOString().slice(0,10);
+      year=Number(selected.slice(0,4));month=Number(selected.slice(5,7));
+      interval=null;render();
+    };
+    show();
+    $('play').textContent='Ⅱ';$('play').setAttribute('aria-label','Pause timeline');
+    replayTimer=setInterval(()=>{
+      cursor+=86400000;
+      if(cursor>Date.parse(end)){stopReplay();return;}
+      show();
+    },Number($('speed').value));
+    return;
+  }
   const first=selected&&Number(selected.slice(-2))<monthLength()?Number(selected.slice(-2)):1;
   selectDay(first);
   $('play').textContent='Ⅱ';
@@ -370,16 +391,31 @@ function gibsUrl(box,layers,date){
 }
 const blueMarble='BlueMarble_ShadedRelief_Bathymetry';
 const trueColor='MODIS_Terra_CorrectedReflectance_TrueColor';
+const visualLayers={
+  terrain:{layers:[blueMarble],timed:false,description:'Blue Marble terrain is a static reference image.'},
+  truecolor:{layers:[blueMarble,trueColor],timed:true,description:'MODIS Terra true colour: daily satellite imagery. Clouds, coverage and latency can obscure the surface.'},
+  falsecolor:{layers:[blueMarble,'MODIS_Terra_CorrectedReflectance_Bands721'],timed:true,description:'MODIS Terra false colour (bands 7-2-1): highlights differences in surface and vegetation. Colours are not a fire perimeter.'},
+  rain:{layers:[blueMarble,'IMERG_Precipitation_Rate'],timed:true,description:'NASA IMERG precipitation rate: satellite-based estimate at the selected time; not a ground measurement or daily total.'}
+};
+function chosenImagery(){
+  const choice=visualLayers[$('imagery-style').value]??visualLayers.terrain;
+  $('imagery-description').textContent=choice.description+' Imagery availability can differ from FIRMS observation times.';
+  return choice;
+}
 let replayImageRequest=0;
 function updateReplayImagery(){
-  if(!globeOn)return;
   const ticket=++replayImageRequest;
   const date=selected??interval?.[1]??monthBounds()[1];
-  const dated=$('imagery-style').value==='truecolor';
+  const choice=chosenImagery();
+  if(choice.timed)$('imagery-description').textContent+=' Imagery date: '+date+' UTC'+(interval?' (last day of selected range)':'')+'.';
   const image=new Image();image.crossOrigin='anonymous';
-  image.onload=()=>{if(ticket!==replayImageRequest||!globeOn||!($('data-mode').value==='records'||firmsConnected))return;try{sphere.upload(image);drawGlobe()}catch{}};
+  image.onload=()=>{
+    if(ticket!==replayImageRequest||!($('data-mode').value==='records'||firmsConnected))return;
+    if(globeOn){try{sphere.upload(image);drawGlobe()}catch{}}
+    else {const mapImage=$('nasa-imagery');mapImage.src=image.src;mapImage.hidden=false;}
+  };
   image.onerror=()=>{if(ticket===replayImageRequest)$('data-note').textContent=firmsStatus+' Satellite imagery is unavailable for this date.'};
-  image.src=gibsUrl(regions.world,dated?[blueMarble,trueColor]:[blueMarble],dated?date:null);
+  image.src=gibsUrl(globeOn?regions.world:region,choice.layers,choice.timed?date:null);
 }
 $('imagery-style').onchange=()=>updateSource(true);
 let imageRequest=0;
@@ -499,7 +535,7 @@ function updateSource(ready=false){
   if(mode==='date'&&!date){$('data-note').textContent='Choose a UTC date for the NASA hotspot layer.';return}
   $('data-note').textContent='Loading NASA thermal-anomaly imagery…';
   const layers=sensor()==='Combined'?[...nasaLayers.MODIS,...nasaLayers.VIIRS]:nasaLayers[sensor()];
-  const baseLayers=$('imagery-style').value==='truecolor'?[blueMarble,trueColor]:[blueMarble];
+  const baseLayers=chosenImagery().layers;
   const request=new Image();
   let timeout=setTimeout(()=>failed('NASA imagery request timed out. Refresh or try a different date or region.'),15000);
   function failed(message){
@@ -615,6 +651,33 @@ $('summer-firms').onclick=()=>{
 $('data-mode').onchange=()=>{if(nasaMode()==='firms'){$('nasa-date').value='';$('firms-end').value='';}else if(!$('nasa-date').value)$('nasa-date').value=$('nasa-date').max;updateSource()};
 $('nasa-date').onchange=()=>{stopEarthTime();if(nasaMode()!=='firms')updateSource()};
 $('refresh-nasa').onclick=()=>updateSource();
+$('mission-summer').onclick=()=>{
+  $('data-mode').value='firms';
+  $('nasa-date').value='2026-06-01';$('firms-end').value='2026-07-31';
+  setRegion('thunderbay',regions.thunderbay);
+  $('map-card').scrollIntoView({behavior:'smooth',block:'start'});
+};
+$('mission-rain').onclick=()=>{
+  $('imagery-style').value='rain';updateSource(true);
+  $('map-card').scrollIntoView({behavior:'smooth',block:'start'});
+};
+$('mission-satellite').onclick=()=>{
+  $('imagery-style').value='truecolor';updateSource(true);
+  $('map-card').scrollIntoView({behavior:'smooth',block:'start'});
+};
 window.addEventListener('hashchange',route);
+const coordinateForm=make('form','coordinate-search');
+const latitudeInput=make('input');latitudeInput.type='number';latitudeInput.min=-90;latitudeInput.max=90;latitudeInput.step='any';latitudeInput.required=true;latitudeInput.placeholder='Latitude';latitudeInput.setAttribute('aria-label','Go to latitude');
+const longitudeInput=make('input');longitudeInput.type='number';longitudeInput.min=-180;longitudeInput.max=180;longitudeInput.step='any';longitudeInput.required=true;longitudeInput.placeholder='Longitude';longitudeInput.setAttribute('aria-label','Go to longitude');
+const goButton=make('button','','Explore coordinates');goButton.type='submit';
+coordinateForm.append(latitudeInput,longitudeInput,goButton);
+document.querySelector('.mission-deck').append(coordinateForm);
+coordinateForm.onsubmit=event=>{
+  event.preventDefault();
+  const lat=latitudeInput.valueAsNumber,lon=longitudeInput.valueAsNumber;
+  if(!Number.isFinite(lat)||!Number.isFinite(lon))return;
+  setRegion('custom',{west:Math.max(-180,lon-2),east:Math.min(180,lon+2),south:Math.max(-90,lat-2),north:Math.min(90,lat+2)});
+  $('map-card').scrollIntoView({behavior:'smooth',block:'start'});
+};
 setRegion('world',regions.world);
 route();
