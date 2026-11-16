@@ -258,13 +258,13 @@ $('speed').onchange=()=>{if(replayTimer){stopReplay();startReplay()}};
 updateCamera();
 function changeMonth(delta){stopReplay();const d=new Date(Date.UTC(year,month-1+delta,1));year=d.getUTCFullYear();month=d.getUTCMonth()+1;selected=null;interval=null;render()}
 $('prev').onclick=()=>changeMonth(-1);$('next').onclick=()=>changeMonth(1);
-$('clear').onclick=()=>{stopReplay();selected=null;interval=null;render()};$('sensor').onchange=render;$('reset-chart').onclick=render;
+$('clear').onclick=()=>{stopReplay();selected=null;interval=null;render()};$('sensor').onchange=updateSource;$('reset-chart').onclick=render;
 $('import').onclick=()=>$('files').click();
 $('files').onchange=async()=>{
   try{
     const data=(await Promise.all([...$('files').files].map(async f=>parseFirms(await f.text())))).flat();
     if(!data.length)throw Error('No recognizable MODIS or VIIRS observations in the selected CSVs.');
-    stopReplay();observations=data;sample=false;const latest=data.map(r=>r.date).sort().at(-1);year=+latest.slice(0,4);month=+latest.slice(5,7);setRegion('world',regions.world);
+    stopReplay();observations=data;sample=false;const latest=data.map(r=>r.date).sort().at(-1);year=+latest.slice(0,4);month=+latest.slice(5,7);$('data-mode').value='records';setRegion('world',regions.world);
   }catch(e){$('data-note').textContent='Import failed. '+e.message}
   $('files').value='';
 };
@@ -274,12 +274,61 @@ $('export').onclick=()=>{
   const csv=[['dataset','utc_date','utc','latitude','longitude','instrument','frp_mw'],...rows.map(r=>[sample?'simulated':'imported_firms',r.date,r.utc,r.lat,r.lon,r.sensor,r.frp??''])].map(r=>r.join(',')).join('\n');
   const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));const a=make('a');a.href=url;a.download='io-earthpulse-'+start+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
-function basemapUrl({west,east,south,north}){
+const nasaMode=()=>$('data-mode').value;
+const nasaLayers={
+  MODIS:['MODIS_Aqua_Thermal_Anomalies_All','MODIS_Terra_Thermal_Anomalies_All'],
+  VIIRS:['VIIRS_NOAA20_Thermal_Anomalies_375m_All']
+};
+function gibsUrl(box,layers,date){
+  const {west,east,south,north}=box;
   const ratio=(east-west)/(north-south);
   const width=Math.max(1,Math.round(Math.min(1440,720*ratio)));
   const height=Math.max(1,Math.round(Math.min(720,1440/ratio)));
-  const query=new URLSearchParams({bbox:[west,south,east,north].join(','),bboxSR:'4326',imageSR:'4326',size:width+','+height,format:'jpg',f:'image'});
-  return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?'+query;
+  const query=new URLSearchParams({SERVICE:'WMS',VERSION:'1.1.1',REQUEST:'GetMap',LAYERS:layers.join(','),STYLES:layers.map(()=> '').join(','),FORMAT:'image/png',BBOX:[west,south,east,north].join(','),WIDTH:width,HEIGHT:height,SRS:'EPSG:4326',TRANSPARENT:'TRUE'});
+  if(date)query.set('TIME',date);
+  return 'https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?'+query;
+}
+const blueMarble='BlueMarble_ShadedRelief_Bathymetry';
+let imageRequest=0;
+function updateSource(){
+  const mode=nasaMode();
+  const records=mode==='records';
+  const image=$('nasa-imagery');
+  const ticket=++imageRequest;
+  const plane=document.querySelector('.map-plane');
+  plane.style.backgroundImage='url("'+gibsUrl(region,[blueMarble])+'")';
+  $('nasa-date-label').hidden=mode!=='date';
+  $('refresh-nasa').hidden=records;
+  for(const selector of ['.stats','.calendar-card','.trend-card','.analysis-card','.replay','#export']){
+    document.querySelector(selector).hidden=!records;
+  }
+  $('map-card').classList.toggle('nasa-map',!records);
+  $('markers').hidden=!records;
+  image.hidden=true;
+  if(records){render();return}
+  stopReplay();
+  const date=mode==='date' ? $('nasa-date').value : '';
+  $('map-date').textContent=(date?date+' UTC':'NASA latest available')+' · '+sensor();
+  if(mode==='date'&&!date){$('data-note').textContent='Choose a UTC date for the NASA hotspot layer.';return}
+  $('data-note').textContent='Loading NASA thermal-anomaly imagery…';
+  const layers=sensor()==='Combined'?[...nasaLayers.MODIS,...nasaLayers.VIIRS]:nasaLayers[sensor()];
+  const request=new Image();
+  let timeout=setTimeout(()=>failed('NASA imagery request timed out. Refresh or try a different date or region.'),15000);
+  function failed(message){
+    clearTimeout(timeout);
+    if(ticket!==imageRequest)return;
+    imageRequest++;
+    $('data-note').textContent=message;
+  }
+  request.onload=()=>{
+    clearTimeout(timeout);
+    if(ticket!==imageRequest)return;
+    image.src=request.src;
+    image.hidden=false;
+    $('data-note').textContent=(date?'NASA GIBS · Requested observation date '+date+' UTC. ':'NASA GIBS · Latest published imagery by sensor. Update times can differ. ')+'An empty view can reflect a gap in satellite coverage.';
+  };
+  request.onerror=()=>failed('NASA imagery unavailable for this request. Try a different date, sensor, or region.');
+  request.src=gibsUrl(region,[blueMarble,...layers],date);
 }
 function setRegion(key,box){
   stopReplay();
@@ -288,13 +337,11 @@ function setRegion(key,box){
   $('region').value=key;
   $('edit-bounds').hidden=key!=='custom';
   $('map-heading').textContent=$('region').selectedOptions[0].textContent.replace('…','')+' explorer';
-  const plane=document.querySelector('.map-plane');
-  plane.style.backgroundImage=key==='thunderbay'?'url(terrain.jpg)':'url("'+basemapUrl(box)+'")';
   map.classList.toggle('regional-basemap',key!=='thunderbay');
   cells=cellDays(observations.filter(row=>within(row.lat,row.lon,box)));
   selected=null;interval=null;
   resetCamera();
-  render();
+  updateSource();
 }
 $('region').onchange=()=>{
   const key=$('region').value;
@@ -341,4 +388,11 @@ function route(){
   else visual.append(make('div','','Earlier acquisition'),make('div','','Later acquisition'));
   card.append(visual);wrap.append(card);$('preview').replaceChildren(wrap);
 }
-window.addEventListener('hashchange',route);render();route();
+$('nasa-date').max=new Date().toISOString().slice(0,10);
+$('nasa-date').value=$('nasa-date').max;
+$('data-mode').onchange=updateSource;
+$('nasa-date').onchange=updateSource;
+$('refresh-nasa').onclick=updateSource;
+window.addEventListener('hashchange',route);
+setRegion('world',regions.world);
+route();

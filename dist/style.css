@@ -63,3 +63,11 @@
 .bounds-fields label{display:flex;flex-direction:column;gap:4px}
 .bounds-fields input{width:100%;padding:6px;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:5px}
 #bounds-error{color:var(--orange);margin-bottom:8px}
+#nasa-imagery{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.map-card.nasa-map{grid-column:1/-1}
+.map-card.nasa-map .map{height:clamp(340px,62vh,740px)}
+.map-card.nasa-map.expanded{grid-template-rows:auto minmax(0,1fr)}
+.map-card.nasa-map.expanded .map{height:auto}
+#nasa-date-label{display:flex;gap:5px;align-items:center}
+#nasa-date{padding:5px;background:#1a252a;border:1px solid var(--line);color:var(--text);border-radius:5px}
+.map-plane{background-image:none}
