@@ -1,5 +1,6 @@
 import {setupStreet} from './street.mjs';
 import {createGlobe} from './globe.mjs';
+import {renderTrends} from './enhance.mjs';
 import {regions,within,validBounds,zoomAt,dayAt,parseFirms,cellDays,filterCells,peakWeek,sampleRows,seasonComparison} from './engine.mjs';
 const $=id=>document.getElementById(id);
 const make=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el};
@@ -59,7 +60,8 @@ function mapCells(c){
     pin.addEventListener('click',()=>{
       hotspotLocation={lat:records[0]?.lat??p.lat,lng:records[0]?.lon??p.lon};
       stopReplay();
-      $('pixel-content').replaceChildren(make('p','',pin.title),...records.map(r=>make('div','',r.utc+' · '+r.sensor+' · '+(r.satellite||'Unknown satellite')+(r.confidence?' · Confidence '+r.confidence:'')+(Number.isFinite(r.frp)?' · '+r.frp+' MW FRP':''))));
+      const wv=make('a','worldview-link','Open in NASA Worldview ↗');const d0=records[0]?.date??p.date??'';wv.href='https://worldview.earthdata.nasa.gov/?v='+[p.lon-1.5,p.lat-1,p.lon+1.5,p.lat+1].map(v=>v.toFixed(3)).join(',')+(d0?'&t='+d0:'')+'&l=VIIRS_NOAA20_Thermal_Anomalies_375m_All,MODIS_Terra_Thermal_Anomalies_All,MODIS_Terra_CorrectedReflectance_TrueColor';wv.target='_blank';wv.rel='noopener noreferrer';
+      $('pixel-content').replaceChildren(make('p','',pin.title),wv,...records.map(r=>make('div','',r.utc+' · '+r.sensor+' · '+(r.satellite||'Unknown satellite')+(r.confidence?' · Confidence '+r.confidence:'')+(Number.isFinite(r.frp)?' · '+r.frp+' MW FRP':''))));
       $('pixel').showModal();
     });return pin;
   }));
@@ -112,7 +114,9 @@ function render(){
     showChart(chart,'Activity over time','Observed hotspot cell-days · '+format(first,{month:'long',year:'numeric'}));
   }
   $('analysis-result').textContent='Choose an analysis to update the chart. Model-powered questions will be available after SI is connected.';
+  window.dispatchEvent(new CustomEvent('earthpulse:render',{detail:{observations,region,regionKey,sensor:sensor(),sample,year,month}}));
 }
+window.addEventListener('earthpulse:goto',e=>{stopReplay();year=e.detail.year;month=e.detail.month;selected=null;interval=null;render();$('map-card').scrollIntoView({behavior:'smooth',block:'start'})});
 function analyze(operation){
   stopReplay();
   const [start,end]=currentBounds();
@@ -516,7 +520,7 @@ function updateSource(ready=false){
   $('refresh-nasa').hidden=mode==='records';
   $('earth-play').hidden=mode!=='date';
   if(mode!=='date')stopEarthTime();
-  for(const selector of ['.stats','.calendar-card','.trend-card','.analysis-card','.replay','#export']){
+  for(const selector of ['.stats','.calendar-card','.trend-card','.analysis-card','.replay','#export','#xp']){
     document.querySelector(selector).hidden=!records;
   }
   $('map-card').classList.toggle('nasa-map',!records);
@@ -627,6 +631,7 @@ function route(){
   $('fire').hidden=route!=='fire';$('preview').hidden=route==='fire';
   if(route==='fire')return;
   stopReplay();stopEarthTime();setExpanded(false);
+  if(route==='trends'){renderTrends($('preview'));return}
   const wrap=make('div');
   wrap.append(make('div','eyebrow','MODULE PREVIEW'),make('h1','',title),make('p','',route==='trends'?'Explore how precipitation and other Earth variables change over time.':'Compare radar acquisitions to investigate surface change.' ));
   const card=make('article','card preview-visual');
