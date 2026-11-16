@@ -72,7 +72,7 @@ function render(){
   $('replay-day').value=(selected??interval?.[0]??first).slice(-2);
   $('replay-label').textContent=selected?format(selected):interval?period(...interval):'Whole month';
   $('month').textContent=format(first,{month:'long',year:'numeric'});
-  $('data-note').textContent=sample?'Demo data · Simulated hotspots, not live NASA observations. Import FIRMS CSVs to analyze actual observations.':'Imported FIRMS CSVs · Observations only. Dates without records have unknown coverage.';
+  $('data-note').textContent=firmsConnected?'NASA FIRMS · '+($('nasa-date').value?'Selected UTC day':'Most recent UTC day')+' · Dates without records have unknown coverage.':sample?'Demo data · Simulated hotspots, not live NASA observations. Import FIRMS CSVs to analyze actual observations.':'Imported FIRMS CSVs · Observations only. Dates without records have unknown coverage.';
   const max=Math.max(1,...counts.values());
   const buttons=Array.from({length:(new Date(first+'T00:00:00Z').getUTCDay()+6)%7},()=>make('span'));
   const chart=[];
@@ -258,13 +258,13 @@ $('speed').onchange=()=>{if(replayTimer){stopReplay();startReplay()}};
 updateCamera();
 function changeMonth(delta){stopReplay();const d=new Date(Date.UTC(year,month-1+delta,1));year=d.getUTCFullYear();month=d.getUTCMonth()+1;selected=null;interval=null;render()}
 $('prev').onclick=()=>changeMonth(-1);$('next').onclick=()=>changeMonth(1);
-$('clear').onclick=()=>{stopReplay();selected=null;interval=null;render()};$('sensor').onchange=updateSource;$('reset-chart').onclick=render;
+$('clear').onclick=()=>{stopReplay();selected=null;interval=null;render()};$('sensor').onchange=()=>updateSource();$('reset-chart').onclick=render;
 $('import').onclick=()=>$('files').click();
 $('files').onchange=async()=>{
   try{
     const data=(await Promise.all([...$('files').files].map(async f=>parseFirms(await f.text())))).flat();
     if(!data.length)throw Error('No recognizable MODIS or VIIRS observations in the selected CSVs.');
-    stopReplay();observations=data;sample=false;const latest=data.map(r=>r.date).sort().at(-1);year=+latest.slice(0,4);month=+latest.slice(5,7);$('data-mode').value='records';setRegion('world',regions.world);
+    stopReplay();replayObservations=data;replaySample=false;observations=data;sample=false;const latest=data.map(r=>r.date).sort().at(-1);year=+latest.slice(0,4);month=+latest.slice(5,7);$('data-mode').value='records';setRegion('world',regions.world);
   }catch(e){$('data-note').textContent='Import failed. '+e.message}
   $('files').value='';
 };
@@ -290,15 +290,54 @@ function gibsUrl(box,layers,date){
 }
 const blueMarble='BlueMarble_ShadedRelief_Bathymetry';
 let imageRequest=0;
-function updateSource(){
+let firmsRequest;
+let firmsConnected=false;
+let replayObservations=observations;
+let replaySample=true;
+function loadFirms(ticket){
+  firmsRequest=new AbortController();
+  const area=regionKey==='world'?'world':[region.west,region.south,region.east,region.north].join(',');
+  const parameters=new URLSearchParams({area,sensor:sensor()});
+  if($('nasa-date').value)parameters.set('date',$('nasa-date').value);
+  $('data-note').textContent='Loading NASA FIRMS hotspot records…';
+  fetch('/api/firms?'+parameters,{signal:firmsRequest.signal})
+    .then(async response=>{
+      const payload=await response.json();
+      if(!response.ok)throw Error(payload.message);
+      return payload.feeds.flatMap(feed=>parseFirms(feed.csv));
+    }).then(rows=>{
+      if(ticket!==imageRequest)return;
+      observations=rows;
+      sample=false;
+      cells=cellDays(rows.filter(r=>within(r.lat,r.lon,region)));
+      const date=parameters.get('date')||rows.map(r=>r.date).sort().at(-1)||new Date().toISOString().slice(0,10);
+      year=+date.slice(0,4);month=+date.slice(5,7);
+      selected=date;interval=null;
+      firmsConnected=true;
+      updateSource(true);
+    }).catch(error=>{
+      if(ticket===imageRequest&&error.name!=='AbortError')$('data-note').textContent=error.message||'FIRMS records could not load.';
+    });
+}
+
+function updateSource(ready=false){
   const mode=nasaMode();
-  const records=mode==='records';
+  firmsRequest?.abort();
+  const firmsMode=mode==='firms';
+  if(!ready)firmsConnected=false;
+  const records=mode==='records'||(firmsMode&&firmsConnected);
+  if(mode==='records'&&observations!==replayObservations){
+    observations=replayObservations;sample=replaySample;
+    cells=cellDays(observations.filter(r=>within(r.lat,r.lon,region)));
+    const date=observations.map(r=>r.date).sort().at(-1);
+    year=+date.slice(0,4);month=+date.slice(5,7);selected=null;interval=null;
+  }
   const image=$('nasa-imagery');
   const ticket=++imageRequest;
   const plane=document.querySelector('.map-plane');
   plane.style.backgroundImage='url("'+gibsUrl(region,[blueMarble])+'")';
-  $('nasa-date-label').hidden=mode!=='date';
-  $('refresh-nasa').hidden=records;
+  $('nasa-date-label').hidden=mode!=='date'&&!firmsMode;
+  $('refresh-nasa').hidden=mode==='records';
   for(const selector of ['.stats','.calendar-card','.trend-card','.analysis-card','.replay','#export']){
     document.querySelector(selector).hidden=!records;
   }
@@ -306,6 +345,7 @@ function updateSource(){
   $('markers').hidden=!records;
   image.hidden=true;
   if(records){render();return}
+  if(firmsMode){loadFirms(ticket);return}
   stopReplay();
   const date=mode==='date' ? $('nasa-date').value : '';
   $('map-date').textContent=(date?date+' UTC':'NASA latest available')+' · '+sensor();
@@ -390,9 +430,9 @@ function route(){
 }
 $('nasa-date').max=new Date().toISOString().slice(0,10);
 $('nasa-date').value=$('nasa-date').max;
-$('data-mode').onchange=updateSource;
-$('nasa-date').onchange=updateSource;
-$('refresh-nasa').onclick=updateSource;
+$('data-mode').onchange=()=>{if(nasaMode()==='firms')$('nasa-date').value='';else if(!$('nasa-date').value)$('nasa-date').value=$('nasa-date').max;updateSource()};
+$('nasa-date').onchange=()=>updateSource();
+$('refresh-nasa').onclick=()=>updateSource();
 window.addEventListener('hashchange',route);
 setRegion('world',regions.world);
 route();
