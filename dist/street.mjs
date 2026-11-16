@@ -1,3 +1,4 @@
+import {GOOGLE_MAPS_KEY} from './config.js';
 let loader;
 function loadGoogle(key){
   if(loader)return loader;
@@ -45,9 +46,12 @@ export function setupStreet(){
     preparing=(async()=>{
       status.textContent='Checking Google Maps configuration…';
       try{
-        const response=await fetch('/api/maps-config');
-        if(!response.ok)throw Error('The in-app Google Maps view is waiting for a restricted browser key.');
-        const {key}=await response.json();
+        let key=GOOGLE_MAPS_KEY;
+        if(!key){
+          const response=await fetch('/api/maps-config').catch(()=>null);
+          if(response?.ok)key=(await response.json()).key;
+        }
+        if(!key)throw Error('The in-app Google Maps view is waiting for a restricted browser key.');
         const api=await loadGoogle(key);
         const [{Map,TrafficLayer},{StreetViewService}]=await Promise.all([api.importLibrary('maps'),api.importLibrary('streetView')]);
         canvas.hidden=false;

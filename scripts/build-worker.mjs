@@ -9,6 +9,10 @@ const assets={
   '/engine.mjs':['engine.mjs','text/javascript; charset=utf-8'],
   '/enhance.mjs':['enhance.mjs','text/javascript; charset=utf-8'],
   '/investigate.mjs':['investigate.mjs','text/javascript; charset=utf-8'],
+  '/sharp.mjs':['sharp.mjs','text/javascript; charset=utf-8'],
+  '/config.js':['config.js','text/javascript; charset=utf-8'],
+  '/vendor/leaflet.js':['vendor/leaflet.js','text/javascript; charset=utf-8'],
+  '/vendor/leaflet.css':['vendor/leaflet.css','text/css; charset=utf-8'],
   '/style.css':['style.css','text/css; charset=utf-8']
 };
 for(const [path,[file,type]] of Object.entries(assets)){

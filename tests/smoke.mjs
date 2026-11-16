@@ -52,6 +52,8 @@ await context.route(/gibs\.earthdata\.nasa\.gov/,r=>r.fulfill({status:200,conten
 await context.route(/power\.larc\.nasa\.gov\/api\/temporal\/monthly/,r=>r.fulfill(json(powerMonthly())));
 await context.route(/power\.larc\.nasa\.gov\/api\/temporal\/daily/,r=>r.fulfill(json(powerDaily(r.request().url()))));
 await context.route(/power\.larc\.nasa\.gov\/api\/temporal\/climatology/,r=>r.fulfill(json({properties:{parameter:{PRECTOTCORR:{JAN:1,FEB:1,MAR:1.4,APR:1.8,MAY:2.6,JUN:3.2,JUL:3,AUG:2.9,SEP:2.8,OCT:2.2,NOV:1.6,DEC:1.1,ANN:2.1}}}})));
+await context.route(/server\.arcgisonline\.com|tile\.googleapis\.com\/v1\/2dtiles/,r=>r.fulfill({status:200,contentType:'image/png',body:PNG}));
+await context.route(/eonet\.gsfc\.nasa\.gov/,r=>r.fulfill(json({events:[{title:'Wildfire Test Ridge',closed:null,sources:[{url:'https://example.org/fire'}],geometry:[{date:'2026-07-10T00:00:00Z',type:'Point',coordinates:[-89.5,49.2]}]}]})));
 await context.route(/nominatim\.openstreetmap\.org/,r=>r.fulfill(json([{display_name:'Kenora, Ontario, Canada',lat:'49.767',lon:'-94.489',boundingbox:['49.70','49.83','-94.60','-94.35']}])));
 await context.route(/modis\.ornl\.gov/,r=>r.fulfill(json({scale:'0.0001',subset:Array.from({length:8},(_,i)=>({calendar_date:`2024-0${5+Math.floor(i/2)}-${i%2?'25':'09'}`,data:[5200+i*260]}))})));
 await context.route(/\/api\/(firms|maps-config)/,r=>r.fulfill({status:503,contentType:'application/json',body:'{"message":"FIRMS credentials have not been configured."}'}));
@@ -101,6 +103,23 @@ if(await has('#xp-search')){
   await check('fuel and weather card',async()=>{await page.click('#xp-fuel-load');await page.waitForTimeout(900);const t=await text('#xp-fuel-out');expect(/rain/i.test(t),'no rain stats: '+t.slice(0,60));return t.replace(/\n/g,' ').slice(0,150)});
   await check('missions progress',async()=>{const t=await text('#xp-missions');expect(/\d+\s*\/\s*\d+/.test(t),'no progress');return t.replace(/\n/g,' ').slice(0,120)});
 }
+await check('Sharp zoom map opens with hotspots',async()=>{
+  await page.selectOption('#region','thunderbay');await page.click('#clear');await page.waitForTimeout(300);
+  await page.click('#xp-sharp-toggle');await page.waitForTimeout(900);
+  expect(await has('#xp-sharp-map.leaflet-container'),'leaflet not initialised');
+  const tiles=await page.$$eval('#xp-sharp-map img.leaflet-tile',t=>t.length);expect(tiles>0,'no tiles');
+  const hasCanvas=await has('#xp-sharp-map canvas');expect(hasCanvas,'no hotspot canvas');
+  return tiles+' tiles · '+await text('#xp-sharp-status')});
+await check('Sharp zoom: NASA dated layers + smoke',async()=>{
+  for(const v of ['hls','truecolor','falsecolor']){await page.selectOption('#xp-sharp-base',v);await page.waitForTimeout(250)}
+  const srcs=await page.$$eval('#xp-sharp-map img.leaflet-tile',t=>t.map(x=>x.src));expect(srcs.some(src=>/gibs\.earthdata\.nasa\.gov\/wmts\/epsg3857\/best\/MODIS_Terra_CorrectedReflectance_Bands721\/default\/\d{4}-\d\d-\d\d\//.test(src)),'no dated GIBS tile');
+  await page.check('#xp-sharp-smoke');await page.waitForTimeout(250);return (await text('#xp-sharp-status')).slice(0,80)});
+await check('Sharp zoom: EONET named fires',async()=>{await page.check('#xp-sharp-events');await page.waitForTimeout(600);expect(await has('.xp-event'),'no event marker');return await text('#xp-sharp-status')});
+await check('Sharp zoom: zoom in keeps map, close returns to globe',async()=>{
+  const before=await text('#zoom-readout');await page.selectOption('#xp-sharp-base','esri');for(let i=0;i<7;i++){await page.click('#xp-sharp-map .leaflet-control-zoom-in');await page.waitForTimeout(350)}
+  await page.mouse.move(700,600);await page.mouse.wheel(0,-300);await page.waitForTimeout(400);const z=Math.max(...await page.$$eval('#xp-sharp-map img.leaflet-tile',t=>t.map(x=>+(x.src.match(/World_Imagery\/MapServer\/tile\/(\d+)\//)?.[1]??0))));
+  const camera=await text('#zoom-readout');await page.click('#xp-sharp-close');await page.waitForTimeout(200);
+  expect(await page.$eval('#xp-sharp',e=>e.hidden),'still open');expect(camera===before,'globe zoom changed: '+before+' -> '+camera);expect(z>=12,'tile zoom only '+z);return 'tile zoom '+z});
 await shot('fire');
 await check('Earth Trends page',async()=>{await page.goto(base+'#trends');await page.waitForTimeout(900);const t=await text('#xp-verdict');expect(/per decade/.test(t),'no verdict');await page.click('#xp-qs button:nth-child(2)');await page.waitForTimeout(200);return (await text('#xp-ttitle'))});
 await shot('trends');

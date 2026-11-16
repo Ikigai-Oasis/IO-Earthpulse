@@ -35,9 +35,20 @@ For the deployed application, choose **FIRMS hotspot records**, a region and opt
 - **Sharper imagery when zoomed**: GIBS imagery is re-requested at up to about 2.8× resolution after zooming in.
 - **All cells drawn**: cells beyond the 2,500 selectable markers are drawn on a canvas layer instead of being dropped.
 
+## Sharp zoom
+
+The **Sharp zoom** button on the explorer opens a tiled map that zooms to street level, with the loaded hotspot cells on top.
+
+- Imagery: Esri World Imagery (free, about 0.5 m) by default; Google satellite when a key is set in `dist/config.js`.
+- Dated NASA layers from GIBS: Harmonized Landsat Sentinel-2 at 30 m, MODIS true colour and false colour 7-2-1.
+- Overlays: MODIS aerosol optical depth (smoke), named wildfire events from NASA EONET, place names.
+- Setting a Google key also enables the in-app Street detail view on GitHub Pages. Restrict the key to this site and to Map Tiles API, Maps JavaScript API and Street View before committing it.
+
+Leaflet 1.9.4 is vendored in `dist/vendor/` (BSD-2-Clause).
+
 ## Tests
 
-`node tests/smoke.mjs` runs 35 browser checks with Playwright against `dist/`, with NASA, ORNL and OpenStreetMap requests mocked so it works offline.
+`node tests/smoke.mjs` runs 39 browser checks with Playwright against `dist/`, with NASA, ORNL and OpenStreetMap requests mocked so it works offline.
 
 ## GitHub Pages
 
@@ -47,4 +58,4 @@ For the deployed application, choose **FIRMS hotspot records**, a region and opt
 
 The application code was written with AI assistance: ChatGPT (OpenAI) for the original app, and Claude (Anthropic) for the enhancements listed above. The team chose the challenge, region, data sources and features. The demo dataset is simulated and labelled as such in the app.
 
-Data: NASA FIRMS (MODIS C6.1, VIIRS 375 m), NASA GIBS, NASA POWER, MODIS MOD13Q1 NDVI via ORNL DAAC. Place search © OpenStreetMap contributors. We acknowledge the use of data from NASA's Fire Information for Resource Management System (FIRMS), part of NASA's Earth Science Data and Information System (ESDIS).
+Data: NASA FIRMS (MODIS C6.1, VIIRS 375 m), NASA GIBS, NASA POWER, MODIS MOD13Q1 NDVI via ORNL DAAC, NASA EONET. Sharp imagery © Esri, Maxar, Earthstar Geographics (or © Google with a key). Place search © OpenStreetMap contributors. We acknowledge the use of data from NASA's Fire Information for Resource Management System (FIRMS), part of NASA's Earth Science Data and Information System (ESDIS).

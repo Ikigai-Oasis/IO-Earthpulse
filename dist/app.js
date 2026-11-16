@@ -2,6 +2,7 @@ import {setupStreet} from './street.mjs';
 import {createGlobe} from './globe.mjs';
 import {renderTrends} from './enhance.mjs';
 import './investigate.mjs';
+import './sharp.mjs';
 import {regions,within,validBounds,zoomAt,dayAt,parseFirms,cellDays,filterCells,peakWeek,sampleRows,seasonComparison} from './engine.mjs';
 const $=id=>document.getElementById(id);
 const make=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el};

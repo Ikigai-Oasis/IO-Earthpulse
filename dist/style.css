@@ -166,3 +166,17 @@
 .xp-fuel-key{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--muted)}.xp-fuel-key i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 .xp-ndvi-row{display:flex;gap:14px;flex-wrap:wrap;align-items:center}.xp-ndvi-row>div{flex:1;min-width:220px}
 @media(prefers-reduced-motion:reduce){.xp-mission li.new{animation:none}.xp-mbar i{transition:none}}
+/* ---- Sharp zoom map ---- */
+#xp-sharp-toggle{border-color:#4b6350;color:var(--green)}#xp-sharp-toggle[aria-pressed=true]{background:#24352a}
+#xp-sharp{position:absolute;inset:0;z-index:6;background:#0b1012}#xp-sharp-map{position:absolute;inset:0;background:#0b1012;font:inherit}
+.map.xp-sharp-open{height:min(70vh,560px)}.map-card.expanded .map.xp-sharp-open{height:auto}
+.xp-sharp-panel{position:absolute;z-index:500;top:8px;left:52px;right:8px;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:11.5px;background:#101619e6;border:1px solid var(--line);border-radius:9px;padding:6px 9px;color:var(--text)}
+.xp-sharp-panel label{display:flex;gap:5px;align-items:center;color:var(--muted)}.xp-sharp-panel select,.xp-sharp-panel input[type=date]{font:inherit;font-size:11.5px;color:var(--text);background:#192125;border:1px solid var(--line);border-radius:6px;padding:4px 6px;color-scheme:dark;max-width:230px}
+.xp-sharp-panel .xp-check{color:var(--text);cursor:pointer}.xp-sharp-panel .xp-check input{accent-color:#beecad}.xp-sharp-panel button{font-size:11.5px;padding:4px 9px;margin-left:auto}.xp-sharp-panel .xp-dim{opacity:.45}
+.xp-sharp-note{position:absolute;z-index:500;left:8px;right:8px;bottom:22px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:10.5px;pointer-events:none}
+.xp-sharp-note span{background:#101619e0;border-radius:6px;padding:3px 7px;color:#d0dfdb;max-width:70ch}.xp-sharp-note span:empty{display:none}
+#xp-sharp .leaflet-control-zoom a{background:#192125;color:var(--text);border-color:var(--line)}#xp-sharp .leaflet-control-attribution{background:#101619cc;color:#a0aeb0;font-size:9px}#xp-sharp .leaflet-control-attribution a{color:#beecad}
+#xp-sharp .leaflet-popup-content-wrapper,#xp-sharp .leaflet-popup-tip{background:#12191c;color:var(--text);border:1px solid var(--line)}#xp-sharp .leaflet-popup-content{font-size:12px;margin:10px 12px}#xp-sharp .leaflet-popup-content a{color:var(--green)}
+#xp-sharp .leaflet-control-scale-line{background:#101619cc;color:#d0dfdb;border-color:#d0dfdb}
+.xp-event span{display:grid;place-items:center;width:26px;height:26px;font-size:15px;background:#12191ce6;border:1px solid #ffb08a;border-radius:50%}
+#xp-sharp img.leaflet-tile{max-width:none}
