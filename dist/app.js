@@ -366,16 +366,30 @@ function gibsUrl(box,layers,date){
 }
 const blueMarble='BlueMarble_ShadedRelief_Bathymetry';
 const trueColor='MODIS_Terra_CorrectedReflectance_TrueColor';
+const visualLayers={
+  terrain:{layers:[blueMarble],timed:false,description:'Blue Marble terrain is a static reference image.'},
+  truecolor:{layers:[blueMarble,trueColor],timed:true,description:'MODIS Terra true colour: daily satellite imagery. Clouds, coverage and latency can obscure the surface.'},
+  falsecolor:{layers:[blueMarble,'MODIS_Terra_CorrectedReflectance_Bands721'],timed:true,description:'MODIS Terra false colour (bands 7-2-1): highlights differences in surface and vegetation. Colours are not a fire perimeter.'},
+  rain:{layers:[blueMarble,'IMERG_Precipitation_Rate'],timed:true,description:'NASA IMERG precipitation rate: satellite-based estimate at the selected time; not a ground measurement or daily total.'}
+};
+function chosenImagery(){
+  const choice=visualLayers[$('imagery-style').value]??visualLayers.terrain;
+  $('imagery-description').textContent=choice.description+' Imagery availability can differ from FIRMS observation times.';
+  return choice;
+}
 let replayImageRequest=0;
 function updateReplayImagery(){
-  if(!globeOn)return;
   const ticket=++replayImageRequest;
   const date=selected??interval?.[1]??monthBounds()[1];
-  const dated=$('imagery-style').value==='truecolor';
+  const choice=chosenImagery();
   const image=new Image();image.crossOrigin='anonymous';
-  image.onload=()=>{if(ticket!==replayImageRequest||!globeOn||!($('data-mode').value==='records'||firmsConnected))return;try{sphere.upload(image);drawGlobe()}catch{}};
+  image.onload=()=>{
+    if(ticket!==replayImageRequest||!($('data-mode').value==='records'||firmsConnected))return;
+    if(globeOn){try{sphere.upload(image);drawGlobe()}catch{}}
+    else {const mapImage=$('nasa-imagery');mapImage.src=image.src;mapImage.hidden=false;}
+  };
   image.onerror=()=>{if(ticket===replayImageRequest)$('data-note').textContent=firmsStatus+' Satellite imagery is unavailable for this date.'};
-  image.src=gibsUrl(regions.world,dated?[blueMarble,trueColor]:[blueMarble],dated?date:null);
+  image.src=gibsUrl(globeOn?regions.world:region,choice.layers,choice.timed?date:null);
 }
 $('imagery-style').onchange=()=>updateSource(true);
 let imageRequest=0;
@@ -495,7 +509,7 @@ function updateSource(ready=false){
   if(mode==='date'&&!date){$('data-note').textContent='Choose a UTC date for the NASA hotspot layer.';return}
   $('data-note').textContent='Loading NASA thermal-anomaly imagery…';
   const layers=sensor()==='Combined'?[...nasaLayers.MODIS,...nasaLayers.VIIRS]:nasaLayers[sensor()];
-  const baseLayers=$('imagery-style').value==='truecolor'?[blueMarble,trueColor]:[blueMarble];
+  const baseLayers=chosenImagery().layers;
   const request=new Image();
   let timeout=setTimeout(()=>failed('NASA imagery request timed out. Refresh or try a different date or region.'),15000);
   function failed(message){
