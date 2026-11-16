@@ -321,6 +321,23 @@ function stopReplay(){
   $('play').setAttribute('aria-label','Play timeline');
 }
 function startReplay(){
+  if(interval){
+    const [start,end]=interval;
+    let cursor=Date.parse(start);
+    const show=()=>{
+      selected=new Date(cursor).toISOString().slice(0,10);
+      year=Number(selected.slice(0,4));month=Number(selected.slice(5,7));
+      interval=null;render();
+    };
+    show();
+    $('play').textContent='Ⅱ';$('play').setAttribute('aria-label','Pause timeline');
+    replayTimer=setInterval(()=>{
+      cursor+=86400000;
+      if(cursor>Date.parse(end)){stopReplay();return;}
+      show();
+    },Number($('speed').value));
+    return;
+  }
   const first=selected&&Number(selected.slice(-2))<monthLength()?Number(selected.slice(-2)):1;
   selectDay(first);
   $('play').textContent='Ⅱ';
@@ -644,5 +661,18 @@ $('mission-satellite').onclick=()=>{
   $('map-card').scrollIntoView({behavior:'smooth',block:'start'});
 };
 window.addEventListener('hashchange',route);
+const coordinateForm=make('form','coordinate-search');
+const latitudeInput=make('input');latitudeInput.type='number';latitudeInput.min=-90;latitudeInput.max=90;latitudeInput.step='any';latitudeInput.required=true;latitudeInput.placeholder='Latitude';latitudeInput.setAttribute('aria-label','Go to latitude');
+const longitudeInput=make('input');longitudeInput.type='number';longitudeInput.min=-180;longitudeInput.max=180;longitudeInput.step='any';longitudeInput.required=true;longitudeInput.placeholder='Longitude';longitudeInput.setAttribute('aria-label','Go to longitude');
+const goButton=make('button','','Explore coordinates');goButton.type='submit';
+coordinateForm.append(latitudeInput,longitudeInput,goButton);
+document.querySelector('.mission-deck').append(coordinateForm);
+coordinateForm.onsubmit=event=>{
+  event.preventDefault();
+  const lat=latitudeInput.valueAsNumber,lon=longitudeInput.valueAsNumber;
+  if(!Number.isFinite(lat)||!Number.isFinite(lon))return;
+  setRegion('custom',{west:Math.max(-180,lon-2),east:Math.min(180,lon+2),south:Math.max(-90,lat-2),north:Math.min(90,lat+2)});
+  $('map-card').scrollIntoView({behavior:'smooth',block:'start'});
+};
 setRegion('world',regions.world);
 route();
