@@ -89,3 +89,6 @@
 .street-links a{border:1px solid var(--line);border-radius:7px;padding:7px 11px;background:var(--panel)}
 #street-view button[aria-pressed=true]{border-color:var(--green);color:var(--green)}
 @media(max-width:600px){.map-tools{flex-wrap:wrap;justify-content:flex-end}}
+#firms-end-label{display:flex;gap:5px;align-items:center}
+#firms-end{padding:5px;background:#1a252a;border:1px solid var(--line);color:var(--text);border-radius:5px}
+#summer-firms{border-color:#a35f45;color:#ffd0b2}

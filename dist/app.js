@@ -94,7 +94,22 @@ function render(){
   }
   $('days').replaceChildren(...buttons);
   mapCells(filtered);
-  showChart(chart,'Activity over time','Observed hotspot cell-days · '+format(first,{month:'long',year:'numeric'}));
+  if(interval&&interval[0].slice(0,7)!==interval[1].slice(0,7)){
+    const daily=new Map();
+    filtered.forEach(c=>daily.set(c.date,(daily.get(c.date)||0)+1));
+    const weeks=[];
+    for(let cursor=Date.parse(start);cursor<=Date.parse(end);cursor+=7*86400000){
+      const date=new Date(cursor).toISOString().slice(0,10);
+      let value=0;
+      for(let offset=0;offset<7&&cursor+offset*86400000<=Date.parse(end);offset++){
+        value+=daily.get(new Date(cursor+offset*86400000).toISOString().slice(0,10))??0;
+      }
+      weeks.push({label:format(date),value});
+    }
+    showChart(weeks,'Weekly hotspot activity',period(start,end)+' UTC · hotspot cell-days');
+  }else{
+    showChart(chart,'Activity over time','Observed hotspot cell-days · '+format(first,{month:'long',year:'numeric'}));
+  }
   $('analysis-result').textContent='Choose an analysis to update the chart. Model-powered questions will be available after SI is connected.';
 }
 function analyze(operation){
@@ -396,6 +411,7 @@ function loadFirms(ticket){
   const area=regionKey==='world'?'world':[region.west,region.south,region.east,region.north].join(',');
   const parameters=new URLSearchParams({area,sensor:sensor()});
   if($('nasa-date').value)parameters.set('date',$('nasa-date').value);
+  if($('firms-end').value)parameters.set('end',$('firms-end').value);
   $('data-note').textContent='Loading NASA FIRMS hotspot records…';
   fetch('/api/firms?'+parameters,{signal:firmsRequest.signal})
     .then(async response=>{
@@ -410,10 +426,12 @@ function loadFirms(ticket){
       cells=cellDays(rows.filter(r=>within(r.lat,r.lon,region)));
       const date=parameters.get('date')||rows.map(r=>r.date).sort().at(-1)||new Date().toISOString().slice(0,10);
       year=+date.slice(0,4);month=+date.slice(5,7);
-      selected=date;interval=null;
+      interval=payload.mode==='dated'&&payload.window.start!==payload.window.end?[payload.window.start,payload.window.end]:null;
+      selected=interval?null:date;
+      const products=[...new Set(payload.feeds.map(feed=>feed.product))].join(' + ');
       const context=payload.mode==='archive'?'Recent feed returned no rows. Archive '+payload.window.start+' to '+payload.window.end+' UTC.'
-        :payload.mode==='dated'?'Selected UTC day.':'Near-real-time feed · last 3 UTC days.';
-      firmsStatus='NASA FIRMS · '+context+(rows.length?' Showing '+date+' initially.':' No records returned for this region and window.');
+        :payload.mode==='dated'?'Standard archive · '+period(payload.window.start,payload.window.end)+' UTC.':'Near-real-time feed · last 3 UTC days.';
+      firmsStatus='NASA FIRMS · '+context+' '+products+(rows.length?interval?' · '+rows.length.toLocaleString()+' detections in the requested range.':' · Showing '+date+' initially.':' · No records returned. Coverage may be incomplete.');
       firmsConnected=true;
       updateSource(true);
     }).catch(error=>{
@@ -439,6 +457,9 @@ function updateSource(ready=false){
   const plane=document.querySelector('.map-plane');
   plane.style.backgroundImage='url("'+gibsUrl(region,[blueMarble])+'")';
   $('nasa-date-label').hidden=mode!=='date'&&!firmsMode;
+  $('firms-end-label').hidden=!firmsMode;
+  $('summer-firms').hidden=!firmsMode;
+  $('refresh-nasa').textContent=firmsMode?'Load FIRMS':'Refresh NASA';
   $('refresh-nasa').hidden=mode==='records';
   $('earth-play').hidden=mode!=='date';
   if(mode!=='date')stopEarthTime();
@@ -490,6 +511,10 @@ function setRegion(key,box){
   cells=cellDays(observations.filter(row=>within(row.lat,row.lon,box)));
   selected=null;interval=null;
   resetCamera();
+  if(globeOn&&key!=='world'){
+    camera.zoom=Math.min(5,Math.max(1,100/Math.max(box.east-box.west,box.north-box.south)));
+    updateCamera();
+  }
   updateSource();
 }
 $('region').onchange=()=>{
@@ -559,8 +584,13 @@ function route(){
 }
 $('nasa-date').max=new Date().toISOString().slice(0,10);
 $('nasa-date').value=$('nasa-date').max;
-$('data-mode').onchange=()=>{if(nasaMode()==='firms')$('nasa-date').value='';else if(!$('nasa-date').value)$('nasa-date').value=$('nasa-date').max;updateSource()};
-$('nasa-date').onchange=()=>{stopEarthTime();updateSource()};
+$('firms-end').max=$('nasa-date').max;
+$('summer-firms').onclick=()=>{
+  $('nasa-date').value='2026-06-01';$('firms-end').value='2026-07-31';
+  setRegion('thunderbay',regions.thunderbay);
+};
+$('data-mode').onchange=()=>{if(nasaMode()==='firms'){$('nasa-date').value='';$('firms-end').value='';}else if(!$('nasa-date').value)$('nasa-date').value=$('nasa-date').max;updateSource()};
+$('nasa-date').onchange=()=>{stopEarthTime();if(nasaMode()!=='firms')updateSource()};
 $('refresh-nasa').onclick=()=>updateSource();
 window.addEventListener('hashchange',route);
 setRegion('world',regions.world);

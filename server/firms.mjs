@@ -14,6 +14,11 @@ export async function firms(request,env,fetchData=fetch){
   const date=params.get('date');
   const day=date&&new Date(date+'T00:00:00Z');
   if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(+day)||day.toISOString().slice(0,10)!==date||day>Date.now()))return error('Invalid UTC date.',400);
+  const end=params.get('end');
+  const endDay=end&&new Date(end+'T00:00:00Z');
+  if(end&&(!date||!/^\d{4}-\d{2}-\d{2}$/.test(end)||!Number.isFinite(+endDay)||endDay.toISOString().slice(0,10)!==end||endDay>Date.now()||endDay<day))return error('Enter a valid end date on or after the start date.',400);
+  const span=end?Math.round((endDay-day)/86400000)+1:1;
+  if(span>(area==='world'?5:62))return error('Choose a region for up to 62 days. Worldwide requests support up to five days.',400);
   const sensor=params.get('sensor');
   if(!['MODIS','VIIRS','Combined'].includes(sensor))return error('Invalid instrument.',400);
   try{
@@ -37,9 +42,21 @@ export async function firms(request,env,fetchData=fetch){
       }));
     }
     const hasRows=feeds=>feeds.some(feed=>feed.csv.trim().split(/\r?\n/).length>1);
-    let feeds=await fetchFeeds(Boolean(date),date?1:3,date);
+    let feeds=[];
+    if(date){
+      const batches=Array.from({length:Math.ceil(span/5)},(_,index)=>{
+        const offset=index*5;
+        return [Math.min(5,span-offset),new Date(+day+offset*86400000).toISOString().slice(0,10)];
+      });
+      for(let i=0;i<batches.length;i+=3){
+        const result=await Promise.all(batches.slice(i,i+3).map(([days,start])=>fetchFeeds(true,days,start)));
+        feeds.push(...result.flat());
+      }
+    }else{
+      feeds=await fetchFeeds(false,3,null);
+    }
     let mode=date?'dated':'recent';
-    let window=null;
+    let window=date?{start:date,end:end??date}:null;
     if(!date&&!hasRows(feeds)){
       try{
         const availability=await nasa('data_availability/csv/'+env.FIRMS_MAP_KEY+'/ALL');
