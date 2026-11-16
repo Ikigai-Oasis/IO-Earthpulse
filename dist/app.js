@@ -624,6 +624,20 @@ $('summer-firms').onclick=()=>{
 $('data-mode').onchange=()=>{if(nasaMode()==='firms'){$('nasa-date').value='';$('firms-end').value='';}else if(!$('nasa-date').value)$('nasa-date').value=$('nasa-date').max;updateSource()};
 $('nasa-date').onchange=()=>{stopEarthTime();if(nasaMode()!=='firms')updateSource()};
 $('refresh-nasa').onclick=()=>updateSource();
+$('mission-summer').onclick=()=>{
+  $('data-mode').value='firms';
+  $('nasa-date').value='2026-06-01';$('firms-end').value='2026-07-31';
+  setRegion('thunderbay',regions.thunderbay);
+  $('map-card').scrollIntoView({behavior:'smooth',block:'start'});
+};
+$('mission-rain').onclick=()=>{
+  $('imagery-style').value='rain';updateSource(true);
+  $('map-card').scrollIntoView({behavior:'smooth',block:'start'});
+};
+$('mission-satellite').onclick=()=>{
+  $('imagery-style').value='truecolor';updateSource(true);
+  $('map-card').scrollIntoView({behavior:'smooth',block:'start'});
+};
 window.addEventListener('hashchange',route);
 setRegion('world',regions.world);
 route();
