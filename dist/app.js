@@ -144,6 +144,10 @@ function analyze(operation){
     return;
   }
   const comparison=seasonComparison(cells,start,end,sensor());
+  if(start.slice(0,4)!==end.slice(0,4)){
+    $('analysis-result').textContent='Season comparison currently supports date ranges within one calendar year. Select a shorter period to compare.';
+    return;
+  }
   showChart(comparison.items,'Same dates across seasons',period(start,end)+' · '+sensor(),true);
   const {current,median,baseline}=comparison;
   if(current===null||baseline.length<2){
@@ -382,6 +386,7 @@ function updateReplayImagery(){
   const ticket=++replayImageRequest;
   const date=selected??interval?.[1]??monthBounds()[1];
   const choice=chosenImagery();
+  if(choice.timed)$('imagery-description').textContent+=' Imagery date: '+date+' UTC'+(interval?' (last day of selected range)':'')+'.';
   const image=new Image();image.crossOrigin='anonymous';
   image.onload=()=>{
     if(ticket!==replayImageRequest||!($('data-mode').value==='records'||firmsConnected))return;
