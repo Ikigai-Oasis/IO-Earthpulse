@@ -94,6 +94,7 @@ function render(){
   }
   $('days').replaceChildren(...buttons);
   mapCells(filtered);
+  if(firmsConnected||nasaMode()==='records')updateReplayImagery();
   if(interval&&interval[0].slice(0,7)!==interval[1].slice(0,7)){
     const daily=new Map();
     filtered.forEach(c=>daily.set(c.date,(daily.get(c.date)||0)+1));
@@ -345,7 +346,8 @@ $('files').onchange=async()=>{
 $('export').onclick=()=>{
   const [start,end]=currentBounds();
   const rows=filterCells(cells,start,end,sensor()).flatMap(c=>c.records).filter(r=>sensor()==='Combined'||r.sensor===sensor());
-  const csv=[['dataset','utc_date','utc','latitude','longitude','instrument','frp_mw'],...rows.map(r=>[sample?'simulated':'imported_firms',r.date,r.utc,r.lat,r.lon,r.sensor,r.frp??''])].map(r=>r.join(',')).join('\n');
+  const dataset=sample?'simulated':firmsConnected?'nasa_firms':'imported_firms';
+  const csv=[['dataset','utc_date','utc','latitude','longitude','instrument','frp_mw'],...rows.map(r=>[dataset,r.date,r.utc,r.lat,r.lon,r.sensor,r.frp??''])].map(r=>r.join(',')).join('\n');
   const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));const a=make('a');a.href=url;a.download='io-earthpulse-'+start+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
 const nasaMode=()=>$('data-mode').value;
@@ -363,6 +365,19 @@ function gibsUrl(box,layers,date){
   return 'https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?'+query;
 }
 const blueMarble='BlueMarble_ShadedRelief_Bathymetry';
+const trueColor='MODIS_Terra_CorrectedReflectance_TrueColor';
+let replayImageRequest=0;
+function updateReplayImagery(){
+  if(!globeOn)return;
+  const ticket=++replayImageRequest;
+  const date=selected??interval?.[1]??monthBounds()[1];
+  const dated=$('imagery-style').value==='truecolor';
+  const image=new Image();image.crossOrigin='anonymous';
+  image.onload=()=>{if(ticket!==replayImageRequest||!globeOn||!($('data-mode').value==='records'||firmsConnected))return;try{sphere.upload(image);drawGlobe()}catch{}};
+  image.onerror=()=>{if(ticket===replayImageRequest)$('data-note').textContent=firmsStatus+' Satellite imagery is unavailable for this date.'};
+  image.src=gibsUrl(regions.world,dated?[blueMarble,trueColor]:[blueMarble],dated?date:null);
+}
+$('imagery-style').onchange=()=>updateSource(true);
 let imageRequest=0;
 let timePlaying=false,timeTimer;
 function stopEarthTime(){
@@ -426,7 +441,8 @@ function loadFirms(ticket){
       cells=cellDays(rows.filter(r=>within(r.lat,r.lon,region)));
       const date=parameters.get('date')||rows.map(r=>r.date).sort().at(-1)||new Date().toISOString().slice(0,10);
       year=+date.slice(0,4);month=+date.slice(5,7);
-      interval=payload.mode==='dated'&&payload.window.start!==payload.window.end?[payload.window.start,payload.window.end]:null;
+      const availableDates=rows.map(r=>r.date).sort();
+      interval=payload.window&&payload.window.start!==payload.window.end?[payload.window.start,payload.window.end]:payload.mode==='recent'&&availableDates.length&&availableDates[0]!==availableDates.at(-1)?[availableDates[0],availableDates.at(-1)]:null;
       selected=interval?null:date;
       const products=[...new Set(payload.feeds.map(feed=>feed.product))].join(' + ');
       const context=payload.mode==='archive'?'Recent feed returned no rows. Archive '+payload.window.start+' to '+payload.window.end+' UTC.'
@@ -454,6 +470,7 @@ function updateSource(ready=false){
   }
   const image=$('nasa-imagery');
   const ticket=++imageRequest;
+  replayImageRequest++;
   const plane=document.querySelector('.map-plane');
   plane.style.backgroundImage='url("'+gibsUrl(region,[blueMarble])+'")';
   $('nasa-date-label').hidden=mode!=='date'&&!firmsMode;
@@ -470,7 +487,7 @@ function updateSource(ready=false){
   $('markers').hidden=!records;
   $('globe-markers').hidden=!records;
   image.hidden=true;
-  if(records){if(globeOn)setGlobeTexture(gibsUrl(regions.world,[blueMarble]),ticket);render();return}
+  if(records){render();return}
   if(firmsMode){loadFirms(ticket);return}
   stopReplay();
   const date=mode==='date' ? $('nasa-date').value : '';
@@ -478,6 +495,7 @@ function updateSource(ready=false){
   if(mode==='date'&&!date){$('data-note').textContent='Choose a UTC date for the NASA hotspot layer.';return}
   $('data-note').textContent='Loading NASA thermal-anomaly imagery…';
   const layers=sensor()==='Combined'?[...nasaLayers.MODIS,...nasaLayers.VIIRS]:nasaLayers[sensor()];
+  const baseLayers=$('imagery-style').value==='truecolor'?[blueMarble,trueColor]:[blueMarble];
   const request=new Image();
   let timeout=setTimeout(()=>failed('NASA imagery request timed out. Refresh or try a different date or region.'),15000);
   function failed(message){
@@ -498,7 +516,7 @@ function updateSource(ready=false){
     $('data-note').textContent=(date?'NASA GIBS · Requested observation date '+date+' UTC. ':'NASA GIBS · Latest published imagery by sensor. Update times can differ. ')+'An empty view can reflect a gap in satellite coverage.';
   };
   request.onerror=()=>failed('NASA imagery unavailable for this request. Try a different date, sensor, or region.');
-  request.src=gibsUrl(globeOn?regions.world:region,[blueMarble,...layers],date);
+  request.src=gibsUrl(globeOn?regions.world:region,[...baseLayers,...layers],date);
 }
 function setRegion(key,box){
   stopReplay();
