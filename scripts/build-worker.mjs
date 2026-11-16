@@ -7,6 +7,7 @@ const assets={
   '/street.mjs':['street.mjs','text/javascript; charset=utf-8'],
   '/globe.mjs':['globe.mjs','text/javascript; charset=utf-8'],
   '/engine.mjs':['engine.mjs','text/javascript; charset=utf-8'],
+  '/enhance.mjs':['enhance.mjs','text/javascript; charset=utf-8'],
   '/style.css':['style.css','text/css; charset=utf-8']
 };
 for(const [path,[file,type]] of Object.entries(assets)){
