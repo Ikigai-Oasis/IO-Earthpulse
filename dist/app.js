@@ -1,3 +1,4 @@
+import {createGlobe} from './globe.mjs';
 import {regions,within,validBounds,zoomAt,dayAt,parseFirms,cellDays,filterCells,peakWeek,sampleRows,seasonComparison} from './engine.mjs';
 const $=id=>document.getElementById(id);
 const make=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el};
@@ -39,6 +40,7 @@ function mapCells(c){
   const groups=[...byLocation.values()];
   const visible=groups.length<=2500?groups:groups.sort((a,b)=>b.length-a.length).slice(0,2500);
   if(visible.length<groups.length)$('scale-note').textContent='Showing '+visible.length.toLocaleString()+' of '+groups.length.toLocaleString()+' cells · analysis includes all';
+  $('globe-markers').replaceChildren();
   $('markers').replaceChildren(...visible.map(points=>{
     const p=points[0];
     const pin=make('button','hot');
@@ -47,8 +49,10 @@ function mapCells(c){
     const records=points.flatMap(x=>x.records).filter(r=>sensor()==='Combined'||r.sensor===sensor());
     const peakPower=records.reduce((max,r)=>Number.isFinite(r.frp)?Math.max(max??0,r.frp):max,null);
     pin.style.setProperty('--column-height',(showPower?(peakPower===null?0:Math.min(64,6+Math.sqrt(peakPower)*4)):Math.min(64,6+points.length*7))+'px');
+    pin.style.setProperty('--globe-dot',Math.min(16,5+(showPower?Math.sqrt(peakPower??0)*.55:points.length*1.5))+'px');
     pin.classList.toggle('unavailable-power',showPower&&peakPower===null);
 
+    pin.dataset.lon=p.lon;pin.dataset.lat=p.lat;
     pin.title=p.lat.toFixed(2)+', '+p.lon.toFixed(2)+' · '+points.length+' cell-days';
     pin.setAttribute('aria-label',pin.title);
     pin.addEventListener('click',()=>{
@@ -57,6 +61,7 @@ function mapCells(c){
       $('pixel').showModal();
     });return pin;
   }));
+  syncGlobeMarkers();
 }
 function render(){
   const [first,last]=monthBounds(), [start,end]=currentBounds();
@@ -134,10 +139,53 @@ function analyze(operation){
 }
 for(const b of document.querySelectorAll('[data-analysis]'))b.addEventListener('click',()=>analyze(b.dataset.analysis));
 const map=$('map');
+let sphere;
+try{sphere=createGlobe($('earth-globe'))}catch{}
+let globeOn=Boolean(sphere), globeLongitude=-95, globeLatitude=24;
+let frame;
+function drawGlobe(){
+  if(!globeOn||frame!==undefined)return;
+  frame=requestAnimationFrame(()=>{
+    frame=undefined;
+    if(!globeOn)return;
+    sphere.draw(globeLongitude,globeLatitude,camera.zoom);
+    for(const pin of $('globe-markers').children){
+      const point=sphere.project(Number(pin.dataset.lon),Number(pin.dataset.lat));
+      pin.hidden=!point;
+      if(point){pin.style.left=point.x+'px';pin.style.top=point.y+'px';}
+    }
+  });
+}
+function syncGlobeMarkers(){
+  const from=$(globeOn?'markers':'globe-markers');
+  const to=$(globeOn?'globe-markers':'markers');
+  for(const pin of [...from.children]){
+    pin.hidden=false;
+    if(!globeOn){
+      pin.style.left=clamp((Number(pin.dataset.lon)-region.west)/(region.east-region.west)*100,0,100)+'%';
+      pin.style.top=clamp((region.north-Number(pin.dataset.lat))/(region.north-region.south)*100,0,100)+'%';
+    }
+    to.append(pin);
+  }
+  drawGlobe();
+}
+function focusGlobe(){
+  globeLongitude=regionKey==='world'?-95:(region.west+region.east)/2;
+  globeLatitude=regionKey==='world'?24:(region.south+region.north)/2;
+}
+$('globe-toggle').disabled=!sphere;
+$('globe-toggle').onclick=()=>{
+  globeOn=!globeOn;
+  resetCamera();
+  syncGlobeMarkers();
+  updateSource();
+};
+
 const camera={pitch:44,bearing:-8,zoom:1,x:0,y:0,orbit:true};
 const clamp=(value,min,max)=>Math.min(max,Math.max(min,value));
 function resetCamera(){
   Object.assign(camera,{pitch:44,bearing:-8,zoom:1,x:0,y:0});
+  focusGlobe();
   updateCamera();
 }
 function zoom(factor,x=map.clientWidth/2,y=map.clientHeight/2){
@@ -146,6 +194,12 @@ function zoom(factor,x=map.clientWidth/2,y=map.clientHeight/2){
 }
 function updateCamera(){
   map.classList.toggle('tilted',camera.orbit);
+  map.classList.toggle('globe-mode',globeOn);
+  $('globe-toggle').setAttribute('aria-pressed',globeOn);
+  $('globe-toggle').textContent=globeOn?'Globe':'Map';
+  $('tilt').hidden=globeOn;
+  $('metric-label').textContent=globeOn?'Marker size':'Column height';
+  drawGlobe();
   map.style.setProperty('--pitch',camera.pitch+'deg');
   map.style.setProperty('--bearing',camera.bearing+'deg');
   map.style.setProperty('--stage-zoom',camera.zoom);
@@ -154,7 +208,7 @@ function updateCamera(){
   $('zoom-readout').textContent=camera.zoom.toFixed(1)+'×';
   $('tilt').setAttribute('aria-pressed',camera.orbit);
   $('tilt').textContent=camera.orbit?'Orbit':'Top down';
-  $('camera-hint').textContent=camera.orbit?'Drag to orbit · Scroll to zoom':'Drag to pan · Scroll to zoom';
+  $('camera-hint').textContent=globeOn?'Drag to rotate Earth · Scroll or pinch to zoom':camera.orbit?'Drag to orbit · Scroll to zoom':'Drag to pan · Scroll to zoom';
 }
 $('tilt').onclick=()=>{camera.orbit=!camera.orbit;updateCamera()};
 for(const control of document.querySelectorAll('[data-camera]')){
@@ -165,7 +219,7 @@ for(const control of document.querySelectorAll('[data-camera]')){
     if(action==='zoom-out')zoom(.8);
     if(action==='left'||action==='right'){
       camera.orbit=true;
-      camera.bearing+=action==='left'?-15:15;
+      if(globeOn)globeLongitude+=action==='left'?-15:15;else camera.bearing+=action==='left'?-15:15;
     }
     updateCamera();
   };
@@ -203,6 +257,9 @@ map.addEventListener('pointermove',event=>{
     const rect=map.getBoundingClientRect();
     Object.assign(camera,zoomAt(camera,gesture.distance/previous.distance,previous.x-rect.left,previous.y-rect.top));
     camera.x+=dx;camera.y+=dy;
+  }else if(globeOn){
+    globeLongitude-=dx*.45/camera.zoom;
+    globeLatitude=clamp(globeLatitude+dy*.45/camera.zoom,-89,89);
   }else if(camera.orbit&&!event.shiftKey){
     camera.bearing+=dx*.28;
     camera.pitch=clamp(camera.pitch+dy*.24,18,66);
@@ -290,6 +347,43 @@ function gibsUrl(box,layers,date){
 }
 const blueMarble='BlueMarble_ShadedRelief_Bathymetry';
 let imageRequest=0;
+let timePlaying=false,timeTimer;
+function stopEarthTime(){
+  timePlaying=false;clearTimeout(timeTimer);$('earth-play').textContent='▶ Play 4D';
+}
+function advanceEarthTime(){
+  if(!timePlaying)return;
+  timeTimer=setTimeout(()=>{
+    const date=new Date($('nasa-date').value+'T00:00:00Z');
+    date.setUTCDate(date.getUTCDate()+1);
+    const next=date.toISOString().slice(0,10);
+    if(next>$('nasa-date').max){stopEarthTime();return;}
+    $('nasa-date').value=next;
+    updateSource();
+  },1000);
+}
+$('earth-play').onclick=()=>{
+  if(timePlaying){stopEarthTime();return;}
+  if($('nasa-date').value>=$('nasa-date').max){
+    $('nasa-date').value=new Date(Date.parse($('nasa-date').max)-6*86400000).toISOString().slice(0,10);
+  }
+  timePlaying=true;$('earth-play').textContent='Ⅱ Pause 4D';updateSource();
+};
+function setGlobeTexture(url,ticket){
+  const texture=new Image();
+  texture.crossOrigin='anonymous';
+  texture.onload=()=>{
+    if(ticket!==imageRequest||!globeOn)return;
+    try{sphere.upload(texture);drawGlobe()}catch{
+      globeOn=false;resetCamera();syncGlobeMarkers();updateSource();
+    }
+  };
+  texture.onerror=()=>{
+    if(ticket!==imageRequest||!globeOn)return;
+    globeOn=false;resetCamera();syncGlobeMarkers();updateSource();
+  };
+  texture.src=url;
+}
 let firmsRequest;
 let firmsConnected=false;
 let replayObservations=observations;
@@ -321,6 +415,7 @@ function loadFirms(ticket){
 }
 
 function updateSource(ready=false){
+  clearTimeout(timeTimer);
   const mode=nasaMode();
   firmsRequest?.abort();
   const firmsMode=mode==='firms';
@@ -338,13 +433,16 @@ function updateSource(ready=false){
   plane.style.backgroundImage='url("'+gibsUrl(region,[blueMarble])+'")';
   $('nasa-date-label').hidden=mode!=='date'&&!firmsMode;
   $('refresh-nasa').hidden=mode==='records';
+  $('earth-play').hidden=mode!=='date';
+  if(mode!=='date')stopEarthTime();
   for(const selector of ['.stats','.calendar-card','.trend-card','.analysis-card','.replay','#export']){
     document.querySelector(selector).hidden=!records;
   }
   $('map-card').classList.toggle('nasa-map',!records);
   $('markers').hidden=!records;
+  $('globe-markers').hidden=!records;
   image.hidden=true;
-  if(records){render();return}
+  if(records){if(globeOn)setGlobeTexture(gibsUrl(regions.world,[blueMarble]),ticket);render();return}
   if(firmsMode){loadFirms(ticket);return}
   stopReplay();
   const date=mode==='date' ? $('nasa-date').value : '';
@@ -358,17 +456,21 @@ function updateSource(ready=false){
     clearTimeout(timeout);
     if(ticket!==imageRequest)return;
     imageRequest++;
+    stopEarthTime();
     $('data-note').textContent=message;
   }
+  if(globeOn)request.crossOrigin='anonymous';
   request.onload=()=>{
     clearTimeout(timeout);
     if(ticket!==imageRequest)return;
     image.src=request.src;
     image.hidden=false;
+    if(globeOn){try{sphere.upload(request);drawGlobe()}catch{globeOn=false;resetCamera();updateSource();return}}
+    advanceEarthTime();
     $('data-note').textContent=(date?'NASA GIBS · Requested observation date '+date+' UTC. ':'NASA GIBS · Latest published imagery by sensor. Update times can differ. ')+'An empty view can reflect a gap in satellite coverage.';
   };
   request.onerror=()=>failed('NASA imagery unavailable for this request. Try a different date, sensor, or region.');
-  request.src=gibsUrl(region,[blueMarble,...layers],date);
+  request.src=gibsUrl(globeOn?regions.world:region,[blueMarble,...layers],date);
 }
 function setRegion(key,box){
   stopReplay();
@@ -418,7 +520,7 @@ function route(){
   }
   $('fire').hidden=route!=='fire';$('preview').hidden=route==='fire';
   if(route==='fire')return;
-  stopReplay();setExpanded(false);
+  stopReplay();stopEarthTime();setExpanded(false);
   const wrap=make('div');
   wrap.append(make('div','eyebrow','MODULE PREVIEW'),make('h1','',title),make('p','',route==='trends'?'Explore how precipitation and other Earth variables change over time.':'Compare radar acquisitions to investigate surface change.' ));
   const card=make('article','card preview-visual');
@@ -431,7 +533,7 @@ function route(){
 $('nasa-date').max=new Date().toISOString().slice(0,10);
 $('nasa-date').value=$('nasa-date').max;
 $('data-mode').onchange=()=>{if(nasaMode()==='firms')$('nasa-date').value='';else if(!$('nasa-date').value)$('nasa-date').value=$('nasa-date').max;updateSource()};
-$('nasa-date').onchange=()=>updateSource();
+$('nasa-date').onchange=()=>{stopEarthTime();updateSource()};
 $('refresh-nasa').onclick=()=>updateSource();
 window.addEventListener('hashchange',route);
 setRegion('world',regions.world);

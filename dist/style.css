@@ -71,3 +71,15 @@
 #nasa-date-label{display:flex;gap:5px;align-items:center}
 #nasa-date{padding:5px;background:#1a252a;border:1px solid var(--line);color:var(--text);border-radius:5px}
 .map-plane{background-image:none}
+#earth-globe,#globe-markers{display:none;position:absolute;inset:0;width:100%;height:100%}
+.globe-mode #earth-globe,.globe-mode #globe-markers:not([hidden]){display:block}
+.globe-mode .camera-stage{display:none}
+#globe-markers{pointer-events:none}
+#globe-markers .hot{pointer-events:auto;transform:translate(-50%,-50%);box-shadow:0 0 11px #ff7f45;width:var(--globe-dot,8px);height:var(--globe-dot,8px)}
+#globe-markers .hot:after{display:none}
+.map.globe-mode{background:radial-gradient(ellipse at center,#15253d 0%,#070c1a 62%,#040711 100%);isolation:isolate}
+.map.globe-mode:after{z-index:0;opacity:.45}
+.globe-mode #earth-globe{z-index:1}
+.globe-mode #globe-markers{z-index:2}
+.globe-mode .camera-hint{z-index:3}
+#globe-toggle[aria-pressed=true],#earth-play{color:#abdcff;border-color:#42769c;background:#13283b}

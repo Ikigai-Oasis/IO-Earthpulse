@@ -4,6 +4,7 @@ await mkdir(output,{recursive:true});
 const assets={
   '/':['index.html','text/html; charset=utf-8'],
   '/app.js':['app.js','text/javascript; charset=utf-8'],
+  '/globe.mjs':['globe.mjs','text/javascript; charset=utf-8'],
   '/engine.mjs':['engine.mjs','text/javascript; charset=utf-8'],
   '/style.css':['style.css','text/css; charset=utf-8']
 };
