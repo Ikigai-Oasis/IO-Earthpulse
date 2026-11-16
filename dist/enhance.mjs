@@ -202,7 +202,7 @@ function answer(i,btn){
   if(game.round>=game.qs.length){
     const r=game.score/game.qs.length,badge=r===1?['🔥','Fire Detective','Perfect case file.']:r>=.6?['🛰','Satellite Analyst','Solid reading of the evidence.']:['🌫','Smoke Reader','Every detective starts somewhere.'];
     document.getElementById('xp-badge').innerHTML=`<span class="xp-badge" aria-hidden="true">${badge[0]}</span><b>${badge[1]}</b> · ${badge[2]} Best streak ${game.best}.`;
-    nb.textContent='New investigation';document.getElementById('xp-progress').innerHTML=game.qs.map(()=>'<i class="done"></i>').join('');
+    nb.textContent='New investigation';window.dispatchEvent(new CustomEvent('earthpulse:mission',{detail:'detective'}));document.getElementById('xp-progress').innerHTML=game.qs.map(()=>'<i class="done"></i>').join('');
   }else nb.textContent='Next case';
 }
 
@@ -215,6 +215,8 @@ window.addEventListener('earthpulse:render',e=>{
   const d=e.detail;lastDetail=d;mount();
   const key=d.observations.length+'|'+d.regionKey+'|'+[d.region.west,d.region.south,d.region.east,d.region.north].join(',')+'|'+d.sample;
   if(key!==histKey){histKey=key;history=buildHistory(d);renderHistory();game.qs=null;}
+  document.querySelectorAll('#xp-cal td.xp-cur').forEach(td=>td.classList.remove('xp-cur'));
+  document.querySelector(`#xp-cal td[data-y="${d.year}"][data-mo="${d.month-1}"]`)?.classList.add('xp-cur');
 });
 
 /* ---------- Earth Trends · NASA POWER ---------- */
@@ -306,6 +308,7 @@ function drawTrend(){
     <dl><dt>Mann-Kendall test</dt><dd>Z = ${mk.z.toFixed(2)}, ${pText(mk.p)}</dd><dt>Sen's slope</dt><dd>${ss.b>=0?'+':''}${ss.b.toFixed(4)} ${V.unit}/yr</dd><dt>Linear fit, 95% CI</dt><dd>${(lr.b*10).toFixed(3)} ± ${(lr.ci*10).toFixed(3)} per decade</dd><dt>Change ${first}–${lastY}</dt><dd>${change>=0?'+':''}${change.toFixed(2)} ${V.unit}</dd></dl>
     <p>${sig?`Over ${xs.length} years the ${SEASONS[trend.season][0].replace(/^./,c=>c.toLowerCase())} ${V.name.toLowerCase()} near ${esc(trend.place)} moved toward <b>${esc(dir)}</b> more consistently than chance would explain (p &lt; 0.05).`:`The ${V.name.toLowerCase()} wobbles from year to year, and the overall direction is not yet distinguishable from chance. A longer record or a different season might show a clearer signal.`}</p>`;
   drawFireLink(s);
+  window.dispatchEvent(new CustomEvent('earthpulse:mission',{detail:'trend'}));
 }
 function drawFireLink(s){
   const box=document.getElementById('xp-firelink');if(!box)return;const h=history;

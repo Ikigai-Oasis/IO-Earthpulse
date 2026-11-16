@@ -1,6 +1,7 @@
 import {setupStreet} from './street.mjs';
 import {createGlobe} from './globe.mjs';
 import {renderTrends} from './enhance.mjs';
+import './investigate.mjs';
 import {regions,within,validBounds,zoomAt,dayAt,parseFirms,cellDays,filterCells,peakWeek,sampleRows,seasonComparison} from './engine.mjs';
 const $=id=>document.getElementById(id);
 const make=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el};
@@ -28,6 +29,8 @@ function showChart(items,title,note,analysis=false,unit='observed hotspot cell-d
     track.append(bar);col.append(track,make('span','',item.label));return col;
   }));
 }
+let overflowPoints=[];
+const announceFrame=()=>window.dispatchEvent(new CustomEvent('earthpulse:frame'));
 function mapCells(c){
   const [start,end]=currentBounds();
   $('map-date').textContent=period(start,end)+' UTC · '+sensor();
@@ -40,8 +43,10 @@ function mapCells(c){
   $('scale-note').textContent=c.length?byLocation.size.toLocaleString()+' mapped cells':'No matching records';
   const showPower=$('metric').value==='frp';
   const groups=[...byLocation.values()];
-  const visible=groups.length<=2500?groups:groups.sort((a,b)=>b.length-a.length).slice(0,2500);
-  if(visible.length<groups.length)$('scale-note').textContent='Showing '+visible.length.toLocaleString()+' of '+groups.length.toLocaleString()+' cells · analysis includes all';
+  const sorted=groups.length<=2500?groups:groups.sort((a,b)=>b.length-a.length);
+  const visible=sorted.slice(0,2500);
+  overflowPoints=sorted.slice(2500).map(points=>[points[0].lon,points[0].lat]);
+  if(visible.length<groups.length)$('scale-note').textContent='All '+groups.length.toLocaleString()+' cells drawn · busiest '+visible.length.toLocaleString()+' are selectable';
   $('globe-markers').replaceChildren();
   $('markers').replaceChildren(...visible.map(points=>{
     const p=points[0];
@@ -66,6 +71,7 @@ function mapCells(c){
     });return pin;
   }));
   syncGlobeMarkers();
+  announceFrame();
 }
 function render(){
   const [first,last]=monthBounds(), [start,end]=currentBounds();
@@ -114,9 +120,43 @@ function render(){
     showChart(chart,'Activity over time','Observed hotspot cell-days · '+format(first,{month:'long',year:'numeric'}));
   }
   $('analysis-result').textContent='Choose an analysis to update the chart. Model-powered questions will be available after SI is connected.';
-  window.dispatchEvent(new CustomEvent('earthpulse:render',{detail:{observations,region,regionKey,sensor:sensor(),sample,year,month}}));
+  window.dispatchEvent(new CustomEvent('earthpulse:render',{detail:{...viewState(),observations}}));
 }
 window.addEventListener('earthpulse:goto',e=>{stopReplay();year=e.detail.year;month=e.detail.month;selected=null;interval=null;render();$('map-card').scrollIntoView({behavior:'smooth',block:'start'})});
+function viewState(){
+  const mode=$('data-mode').value;
+  return {mode,region,regionKey,sensor:sensor(),imagery:$('imagery-style').value,year,month,selected,interval,globe:globeOn,date:$('nasa-date').value,end:$('firms-end').value,sample,firmsConnected,firmsStatus,records:mode==='records'||(mode==='firms'&&firmsConnected)};
+}
+const isDate=value=>/^\d{4}-\d{2}-\d{2}$/.test(value??'');
+window.addEventListener('earthpulse:set-region',e=>{
+  const {box,key,label}=e.detail;
+  if(key&&regions[key]){setRegion(key,regions[key]);return}
+  if(!box||!validBounds(box))return;
+  setRegion('custom',box);
+  if(label)$('map-heading').textContent=label+' explorer';
+});
+window.addEventListener('earthpulse:select-day',e=>{
+  const date=e.detail.date;
+  if(!isDate(date))return;
+  stopReplay();year=+date.slice(0,4);month=+date.slice(5,7);selected=date;interval=null;render();
+});
+window.addEventListener('earthpulse:apply-view',e=>{
+  const v=e.detail;stopReplay();
+  if(['Combined','MODIS','VIIRS'].includes(v.sensor))$('sensor').value=v.sensor;
+  if(visualLayers[v.imagery])$('imagery-style').value=v.imagery;
+  if(['recent','date','firms','records'].includes(v.mode))$('data-mode').value=v.mode;
+  if(isDate(v.date))$('nasa-date').value=v.date;
+  if(typeof v.globe==='boolean'&&sphere)globeOn=v.globe;
+  if(regions[v.regionKey])setRegion(v.regionKey,regions[v.regionKey]);
+  else if(v.region&&validBounds(v.region))setRegion('custom',v.region);
+  else updateSource();
+  if($('data-mode').value==='records'&&Number.isInteger(v.year)&&v.month>=1&&v.month<=12){
+    year=v.year;month=v.month;
+    selected=isDate(v.selected)?v.selected:null;
+    interval=Array.isArray(v.interval)&&v.interval.length===2&&v.interval.every(isDate)?v.interval:null;
+    render();
+  }
+});
 function analyze(operation){
   stopReplay();
   const [start,end]=currentBounds();
@@ -180,6 +220,7 @@ function drawGlobe(){
       pin.hidden=!point;
       if(point){pin.style.left=point.x+'px';pin.style.top=point.y+'px';}
     }
+    announceFrame();
   });
 }
 function syncGlobeMarkers(){
@@ -218,6 +259,22 @@ function zoom(factor,x=map.clientWidth/2,y=map.clientHeight/2){
   Object.assign(camera,zoomAt(camera,factor,x,y));
   updateCamera();
 }
+let detail=1,detailTimer;
+function detailScale(){
+  const limit=(sphere?.maxSize??4096)/1440;
+  return Math.min(limit,camera.zoom>=3?2.84:camera.zoom>=1.7?2:1);
+}
+function scheduleDetail(){
+  if(detailScale()===detail)return;
+  clearTimeout(detailTimer);
+  detailTimer=setTimeout(()=>{
+    if(detailScale()===detail)return;
+    detail=detailScale();
+    const mode=$('data-mode').value;
+    if(mode==='records'||(mode==='firms'&&firmsConnected))updateReplayImagery();
+    else if(mode!=='firms'&&!timePlaying)updateSource();
+  },700);
+}
 function updateCamera(){
   map.classList.toggle('tilted',camera.orbit);
   map.classList.toggle('globe-mode',globeOn);
@@ -235,6 +292,8 @@ function updateCamera(){
   $('tilt').setAttribute('aria-pressed',camera.orbit);
   $('tilt').textContent=camera.orbit?'Orbit':'Top down';
   $('camera-hint').textContent=globeOn?'Drag to rotate Earth · Scroll or pinch to zoom':camera.orbit?'Drag to orbit · Scroll to zoom':'Drag to pan · Scroll to zoom';
+  if(!globeOn)announceFrame();
+  scheduleDetail();
 }
 $('tilt').onclick=()=>{camera.orbit=!camera.orbit;updateCamera()};
 for(const control of document.querySelectorAll('[data-camera]')){
@@ -380,11 +439,11 @@ const nasaLayers={
   MODIS:['MODIS_Aqua_Thermal_Anomalies_All','MODIS_Terra_Thermal_Anomalies_All'],
   VIIRS:['VIIRS_NOAA20_Thermal_Anomalies_375m_All']
 };
-function gibsUrl(box,layers,date){
+function gibsUrl(box,layers,date,scale=1){
   const {west,east,south,north}=box;
   const ratio=(east-west)/(north-south);
-  const width=Math.max(1,Math.round(Math.min(1440,720*ratio)));
-  const height=Math.max(1,Math.round(Math.min(720,1440/ratio)));
+  const width=Math.max(1,Math.round(Math.min(1440,720*ratio)*scale));
+  const height=Math.max(1,Math.round(Math.min(720,1440/ratio)*scale));
   const query=new URLSearchParams({SERVICE:'WMS',VERSION:'1.1.1',REQUEST:'GetMap',LAYERS:layers.join(','),STYLES:layers.map(()=> '').join(','),FORMAT:'image/png',BBOX:[west,south,east,north].join(','),WIDTH:width,HEIGHT:height,SRS:'EPSG:4326',TRANSPARENT:'TRUE'});
   if(date)query.set('TIME',date);
   return 'https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?'+query;
@@ -415,7 +474,7 @@ function updateReplayImagery(){
     else {const mapImage=$('nasa-imagery');mapImage.src=image.src;mapImage.hidden=false;}
   };
   image.onerror=()=>{if(ticket===replayImageRequest)$('data-note').textContent=firmsStatus+' Satellite imagery is unavailable for this date.'};
-  image.src=gibsUrl(globeOn?regions.world:region,choice.layers,choice.timed?date:null);
+  image.src=gibsUrl(globeOn?regions.world:region,choice.layers,choice.timed?date:null,detail);
 }
 $('imagery-style').onchange=()=>updateSource(true);
 let imageRequest=0;
@@ -527,6 +586,7 @@ function updateSource(ready=false){
   $('markers').hidden=!records;
   $('globe-markers').hidden=!records;
   image.hidden=true;
+  window.dispatchEvent(new CustomEvent('earthpulse:state',{detail:viewState()}));
   if(records){render();return}
   if(firmsMode){loadFirms(ticket);return}
   stopReplay();
@@ -556,7 +616,7 @@ function updateSource(ready=false){
     $('data-note').textContent=(date?'NASA GIBS · Requested observation date '+date+' UTC. ':'NASA GIBS · Latest published imagery by sensor. Update times can differ. ')+'An empty view can reflect a gap in satellite coverage.';
   };
   request.onerror=()=>failed('NASA imagery unavailable for this request. Try a different date, sensor, or region.');
-  request.src=gibsUrl(globeOn?regions.world:region,[...baseLayers,...layers],date);
+  request.src=gibsUrl(globeOn?regions.world:region,[...baseLayers,...layers],date,detail);
 }
 function setRegion(key,box){
   stopReplay();
@@ -679,5 +739,7 @@ coordinateForm.onsubmit=event=>{
   setRegion('custom',{west:Math.max(-180,lon-2),east:Math.min(180,lon+2),south:Math.max(-90,lat-2),north:Math.min(90,lat+2)});
   $('map-card').scrollIntoView({behavior:'smooth',block:'start'});
 };
+window.earthpulse={gibsUrl,state:viewState,project:(lon,lat)=>globeOn&&sphere?sphere.project(lon,lat):null,get overflow(){return overflowPoints},get detail(){return detail}};
 setRegion('world',regions.world);
 route();
+window.dispatchEvent(new CustomEvent('earthpulse:ready'));

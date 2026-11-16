@@ -60,6 +60,7 @@ export function createGlobe(canvas){
     gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
   }
   return {
+    maxSize:gl.getParameter(gl.MAX_TEXTURE_SIZE),
     draw,
     upload(image){gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,image);loaded=true;},
     project(lon,lat){
