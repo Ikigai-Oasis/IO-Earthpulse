@@ -248,7 +248,7 @@ function renderViews(){
 const MISSIONS=[
   {id:'replay',title:'Replay a fire season',badge:'🎞',steps:[['records','Open hotspot records (Replay records or FIRMS)'],['play','Press ▶ to play the timeline'],['week','Run "Find peak week"'],['hotspot','Open a hotspot to read its evidence']]},
   {id:'sensors',title:'Compare the satellites',badge:'🛰',steps:[['sensor','Switch the instrument to MODIS or VIIRS'],['compareSensors','Run "Compare sensors"'],['history','Open a month from the Fire history calendar'],['detective','Finish a Fire Detective investigation']]},
-  {id:'cause',title:'Investigate the conditions',badge:'🔎',steps:[['place','Find a place by name or coordinates'],['compare','Drag the Before / after divider'],['fuel','Analyze weather and vegetation'],['trend','Test a climate trend in Earth Trends'],['save','Save or share your view']]}
+  {id:'cause',title:'Investigate the conditions',badge:'🔎',steps:[['place','Find a place by name or coordinates'],['sharp','Open Sharp zoom and zoom in on a hotspot'],['compare','Drag the Before / after divider'],['fuel','Analyze weather and vegetation'],['trend','Test a climate trend in Earth Trends'],['save','Save or share your view']]}
 ];
 const MKEY='earthpulse.missions';
 let progress=new Set(store.get(MKEY,[]));
