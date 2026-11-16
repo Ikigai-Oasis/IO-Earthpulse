@@ -19,7 +19,7 @@ export async function firms(request,env,fetchData=fetch){
   try{
     const feeds=await Promise.all((sensor==='Combined'?['MODIS','VIIRS']:[sensor]).map(async instrument=>{
       const product=products[instrument][date?1:0];
-      const path=[env.FIRMS_MAP_KEY,product,area==='world'?area:coords.join(','),'1',...(date?[date]:[])].join('/');
+      const path=[env.FIRMS_MAP_KEY,product,area==='world'?area:coords.join(','),date?'1':'3',...(date?[date]:[])].join('/');
       const response=await fetchData('https://firms.modaps.eosdis.nasa.gov/api/area/csv/'+path,{redirect:'manual',signal:AbortSignal.timeout(18000)});
       const csv=await response.text();
       const reason=csv.trim().slice(0,160);

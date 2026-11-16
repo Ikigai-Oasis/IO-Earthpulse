@@ -77,7 +77,7 @@ function render(){
   $('replay-day').value=(selected??interval?.[0]??first).slice(-2);
   $('replay-label').textContent=selected?format(selected):interval?period(...interval):'Whole month';
   $('month').textContent=format(first,{month:'long',year:'numeric'});
-  $('data-note').textContent=firmsConnected?'NASA FIRMS · '+($('nasa-date').value?'Selected UTC day':'Most recent UTC day')+' · Dates without records have unknown coverage.':sample?'Demo data · Simulated hotspots, not live NASA observations. Import FIRMS CSVs to analyze actual observations.':'Imported FIRMS CSVs · Observations only. Dates without records have unknown coverage.';
+  $('data-note').textContent=firmsConnected?'NASA FIRMS · '+($('nasa-date').value?'Selected UTC day':'Latest available UTC day in the 3-day window')+' · Dates without records have unknown coverage.':sample?'Demo data · Simulated hotspots, not live NASA observations. Import FIRMS CSVs to analyze actual observations.':'Imported FIRMS CSVs · Observations only. Dates without records have unknown coverage.';
   const max=Math.max(1,...counts.values());
   const buttons=Array.from({length:(new Date(first+'T00:00:00Z').getUTCDay()+6)%7},()=>make('span'));
   const chart=[];
